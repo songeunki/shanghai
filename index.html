@@ -94,6 +94,7 @@ html, body { background: #e9e4d7; }
 .rcpt-total-amt { font-family:'Gowun Batang',serif; font-size:32px; font-weight:700; margin:4px 0 2px; }
 .rcpt-total-amt small { font-size:18px; color:#c9a24b; margin-right:4px; }
 .rcpt-total-krw { font-size:15px; color:#e7e0cf; font-weight:600; margin-bottom:6px; }
+.rcpt-cardsum { font-size:12.5px; color:#c9a24b; font-weight:600; margin-bottom:8px; }
 .rcpt-total-sub { font-size:12.5px; color:#9fc4b6; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .rate-input { width:62px; background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.18); color:#f4f1e9; border-radius:7px; padding:3px 6px; font-size:12px; font-family:inherit; outline:none; }
 
@@ -130,6 +131,7 @@ html, body { background: #e9e4d7; }
 .rcpt-krw { font-size:12.5px; color:#a59f8d; font-weight:600; margin-top:1px; }
 .rcpt-meta { font-size:11.5px; color:#a59f8d; margin-top:5px; display:flex; gap:7px; flex-wrap:wrap; align-items:center; }
 .rcpt-payer { background:#f0ece0; color:#5e5a4d; padding:2px 7px; border-radius:6px; font-weight:600; }
+.rcpt-card { background:#e6efe9; color:#13403a; padding:2px 7px; border-radius:6px; font-weight:600; }
 .rcpt-x { background:none; border:none; color:#c4bdab; font-size:20px; cursor:pointer; padding:2px 4px; line-height:1; flex-shrink:0; }
 .rcpt-empty { text-align:center; color:#a59f8d; font-size:13.5px; padding:40px 20px; }
 
@@ -182,6 +184,12 @@ html, body { background: #e9e4d7; }
   ROOMS.forEach(function (r) { r.members.forEach(function (m) { ALL_MEMBERS.push(m); }); });
   var TOTAL = ALL_MEMBERS.length;
 
+  var CARDS = [
+    { id: "shinhan", name: "유니온페이", last4: "8232" },
+    { id: "ibk", name: "BC", last4: "6967" },
+    { id: "cash", name: "현금/기타", last4: "" }
+  ];
+
   var DAYS = [
     { key: "wed", weekday: "수", label: "1일차", theme: "출국" },
     { key: "thu", weekday: "목", label: "2일차", theme: "전시회" },
@@ -214,6 +222,7 @@ html, body { background: #e9e4d7; }
   }
   function fmt(n) { return Number(n).toLocaleString("ko-KR", { maximumFractionDigits: 2 }); }
   function krw(cny) { return Math.round(Number(cny) * rate).toLocaleString("ko-KR"); }
+  function cardLabel(id) { var c = CARDS.filter(function (x) { return x.id === id; })[0]; if (!c) return id || ""; return c.last4 ? c.name + " ••" + c.last4 : c.name; }
 
   var data, saveFlash = false, saveTimer = null;
   var ui = { mode: "roster", activeDay: "wed", openCp: null, adding: false, rcptAdding: false, modalImg: null };
@@ -289,10 +298,11 @@ html, body { background: #e9e4d7; }
   function submitReceipt() {
     var amtEl = document.getElementById("rAmount"), purpEl = document.getElementById("rPurpose"), payEl = document.getElementById("rPayer"), errEl = document.getElementById("rErr");
     var amount = parseFloat(amtEl ? amtEl.value : ""), purpose = (purpEl ? purpEl.value : "").trim(), payer = payEl ? payEl.value : "";
+    var cardEl = document.getElementById("rCard"); var card = cardEl ? cardEl.value : "";
     if (!tempImg) { errEl.textContent = "영수증 사진을 추가해 주세요."; return; }
     if (!(amount > 0)) { errEl.textContent = "금액(위안)을 입력해 주세요."; return; }
     if (!purpose) { errEl.textContent = "용도를 입력해 주세요."; return; }
-    var obj = { id: "r" + Date.now() + Math.floor(Math.random() * 1000), img: tempImg, amount: amount, purpose: purpose, payer: payer || "", ts: Date.now() };
+    var obj = { id: "r" + Date.now() + Math.floor(Math.random() * 1000), img: tempImg, amount: amount, purpose: purpose, payer: payer || "", card: card || "", ts: Date.now() };
     if (useServer) {
       try { fb.fs.setDoc(fb.fs.doc(fb.db, "receipts", obj.id), obj); } catch (e) {}
       receipts.push(obj); tempImg = null; ui.rcptAdding = false; render();
@@ -390,9 +400,15 @@ html, body { background: #e9e4d7; }
   function renderReceipts() {
     var html = '<div class="rcpt-wrap">';
     var total = receipts.reduce(function (s, r) { return s + (Number(r.amount) || 0); }, 0);
+    var byCard = CARDS.map(function (c) {
+      var s = receipts.reduce(function (a, r) { return a + (r.card === c.id ? (Number(r.amount) || 0) : 0); }, 0);
+      return { c: c, s: s };
+    }).filter(function (x) { return x.s > 0; });
+    var cardSum = byCard.map(function (x) { return cardLabel(x.c.id) + " ¥" + fmt(x.s); }).join("  ·  ");
     html += '<div class="rcpt-total"><div class="rcpt-total-lb">총 지출 (위안화)</div>'
       + '<div class="rcpt-total-amt"><small>¥</small>' + fmt(total) + '</div>'
       + '<div class="rcpt-total-krw">≈ ₩' + krw(total) + '</div>'
+      + (cardSum ? '<div class="rcpt-cardsum">' + esc(cardSum) + '</div>' : '')
       + '<div class="rcpt-total-sub"><span>' + receipts.length + '건</span><span>환율 ₩<input class="rate-input" id="rateInput" type="number" inputmode="decimal" value="' + rate + '" />/¥</span></div></div>';
     if (ui.rcptAdding) {
       html += '<div class="rform"><h3>영수증 추가</h3>'
@@ -402,6 +418,8 @@ html, body { background: #e9e4d7; }
         + '<div class="field"><label>용도 <span class="req">*</span></label><input class="f-input" id="rPurpose" type="text" placeholder="예: 단체 석식, 택시, 기념품" /></div>'
         + '<div class="field"><label>결제자 (선택)</label><select class="f-select" id="rPayer"><option value="">선택 안 함</option>'
         + ALL_MEMBERS.map(function (m) { return '<option value="' + esc(m) + '">' + esc(m) + '</option>'; }).join("") + '</select></div>'
+        + '<div class="field"><label>결제 카드</label><select class="f-select" id="rCard">'
+        + CARDS.map(function (c) { return '<option value="' + c.id + '">' + esc(cardLabel(c.id)) + '</option>'; }).join("") + '</select></div>'
         + '<div class="rform-err" id="rErr"></div>'
         + '<div class="rform-btns"><button class="act" data-act="rcpt-submit">저장</button><button class="act act-ghost" data-act="rcpt-cancel">취소</button></div></div>';
     } else {
@@ -419,7 +437,7 @@ html, body { background: #e9e4d7; }
           + '<div class="rcpt-info"><div class="rcpt-purpose">' + esc(r.purpose) + '</div>'
           + '<div class="rcpt-amt"><small>¥</small>' + fmt(r.amount) + '</div>'
           + '<div class="rcpt-krw">≈ ₩' + krw(r.amount) + '</div>'
-          + '<div class="rcpt-meta"><span>' + ds + '</span>' + (r.payer ? '<span class="rcpt-payer">' + esc(r.payer) + '</span>' : '') + '</div></div>'
+          + '<div class="rcpt-meta"><span>' + ds + '</span>' + (r.payer ? '<span class="rcpt-payer">' + esc(r.payer) + '</span>' : '') + (r.card ? '<span class="rcpt-card">' + esc(cardLabel(r.card)) + '</span>' : '') + '</div></div>'
           + '<button class="rcpt-x" data-act="rcpt-del" data-id="' + r.id + '">×</button></div>';
       });
       html += '</div>';
