@@ -106,6 +106,11 @@ html, body { background: #e9e4d7; }
 .photo-pick img { width:100%; max-height:280px; object-fit:contain; display:block; }
 .photo-pick .ph-ico { font-size:30px; }
 .photo-pick .ph-txt { font-size:13px; }
+.photo-pick.has { min-height:auto; align-items:stretch; justify-content:flex-start; border-style:solid; border-color:#e3ded0; }
+.thumbs { display:flex; flex-wrap:wrap; gap:10px; padding:10px; }
+.thumb { position:relative; width:80px; height:80px; }
+.thumb img { width:100%; height:100%; object-fit:cover; border-radius:9px; }
+.thumb-x { position:absolute; top:-7px; right:-7px; width:22px; height:22px; border-radius:50%; background:#0e302b; color:#fff; border:2px solid #fff; font-size:13px; line-height:1; cursor:pointer; padding:0; }
 .photo-btns { display:flex; gap:8px; margin-top:9px; }
 .photo-btn { flex:1; background:#0e302b; border:none; color:#fff; border-radius:10px; padding:12px; font-size:13.5px; font-weight:600; font-family:inherit; cursor:pointer; }
 .photo-btn.alt { background:#f0ece0; color:#3a4742; }
@@ -117,6 +122,11 @@ html, body { background: #e9e4d7; }
 .money-row input { flex:1; border:none; padding:11px 12px; font-size:15px; font-family:inherit; outline:none; }
 .f-input, .f-select { width:100%; border:1px solid #e3ded0; border-radius:10px; padding:11px 12px; font-size:14.5px; font-family:inherit; color:#1d2b27; outline:none; background:#fff; }
 .f-input:focus, .f-select:focus { border-color:#0e302b; }
+.f-area { resize:vertical; min-height:64px; line-height:1.45; }
+.scan-status { font-size:12.5px; margin-top:9px; min-height:16px; }
+.scan-status.on { color:#b58b2e; }
+.scan-status.ok { color:#2f8f5b; }
+.scan-status.err { color:#c25b4e; }
 .rform-err { color:#c25b4e; font-size:12.5px; margin-top:10px; min-height:16px; }
 .rform-btns { display:flex; gap:8px; margin-top:12px; }
 .rform-btns .act { flex:1; text-align:center; padding:12px; font-size:14px; }
@@ -124,11 +134,14 @@ html, body { background: #e9e4d7; }
 .rcpt-list { display:flex; flex-direction:column; gap:11px; }
 .rcpt-item { background:#fff; border:1px solid #e7e1d2; border-radius:14px; padding:11px; display:flex; gap:12px; align-items:flex-start; }
 .rcpt-thumb { width:64px; height:64px; border-radius:10px; object-fit:cover; flex-shrink:0; cursor:pointer; background:#f0ece0; }
+.rcpt-thumbwrap { position:relative; flex-shrink:0; cursor:pointer; }
+.thumb-badge { position:absolute; bottom:3px; right:3px; background:rgba(14,48,43,.85); color:#fff; font-size:10.5px; font-weight:700; padding:1px 6px; border-radius:6px; }
 .rcpt-info { flex:1; min-width:0; }
 .rcpt-purpose { font-size:15px; font-weight:600; color:#1d2b27; word-break:break-all; }
 .rcpt-amt { font-size:17px; font-weight:700; color:#13403a; margin-top:2px; }
 .rcpt-amt small { color:#c9a24b; margin-right:2px; }
 .rcpt-krw { font-size:12.5px; color:#a59f8d; font-weight:600; margin-top:1px; }
+.rcpt-detail { font-size:12.5px; color:#6f6a5c; margin-top:4px; white-space:pre-wrap; word-break:break-word; }
 .rcpt-meta { font-size:11.5px; color:#a59f8d; margin-top:5px; display:flex; gap:7px; flex-wrap:wrap; align-items:center; }
 .rcpt-payer { background:#f0ece0; color:#5e5a4d; padding:2px 7px; border-radius:6px; font-weight:600; }
 .rcpt-card { background:#e6efe9; color:#13403a; padding:2px 7px; border-radius:6px; font-weight:600; }
@@ -139,6 +152,7 @@ html, body { background: #e9e4d7; }
 
 .modal { position:fixed; inset:0; background:rgba(8,20,18,.92); display:flex; align-items:center; justify-content:center; z-index:50; padding:20px; }
 .modal img { max-width:100%; max-height:88vh; border-radius:8px; }
+.modal-scroll { max-height:90vh; overflow:auto; display:flex; flex-direction:column; gap:10px; -webkit-overflow-scrolling:touch; }
 .modal-close { position:fixed; top:calc(16px + env(safe-area-inset-top)); right:18px; color:#fff; font-size:30px; background:none; border:none; cursor:pointer; }
 
 .botnav { position:fixed; bottom:0; left:50%; transform:translateX(-50%); width:100%; max-width:560px; background:#fff; border-top:1px solid #e7e1d2; display:grid; grid-template-columns:1fr 1fr; z-index:20; padding-bottom:env(safe-area-inset-bottom); }
@@ -149,7 +163,7 @@ html, body { background: #e9e4d7; }
 </head>
 <body>
 <div id="root"><div class="screen"><div class="loading">불러오는 중…</div></div></div>
-<input type="file" id="rcptFile" accept="image/*" style="display:none" />
+<input type="file" id="rcptFile" accept="image/*" multiple style="display:none" />
 <input type="file" id="rcptCam" accept="image/*" capture="environment" style="display:none" />
 
 <script>
@@ -191,6 +205,7 @@ html, body { background: #e9e4d7; }
     { id: "shinhan", name: "유니온페이", last4: "8232" },
     { id: "cash", name: "현금/기타", last4: "" }
   ];
+  var PAYER_LIST = ALL_MEMBERS.slice().sort(function (a, b) { return a.localeCompare(b, "ko"); });
 
   var DAYS = [
     { key: "wed", weekday: "수", label: "1일차", theme: "출국" },
@@ -225,10 +240,11 @@ html, body { background: #e9e4d7; }
   function fmt(n) { return Number(n).toLocaleString("ko-KR", { maximumFractionDigits: 2 }); }
   function krw(cny) { return Math.round(Number(cny) * rate).toLocaleString("ko-KR"); }
   function cardLabel(id) { var c = CARDS.filter(function (x) { return x.id === id; })[0]; if (!c) return id || ""; return c.last4 ? c.name + " ••" + c.last4 : c.name; }
+  function getImgs(r) { if (!r) return []; if (r.imgs && r.imgs.length) return r.imgs; if (r.img) return [r.img]; return []; }
 
   var data, saveFlash = false, saveTimer = null;
-  var ui = { mode: "roster", activeDay: "wed", openCp: null, adding: false, rcptAdding: false, editingId: null, modalImg: null };
-  var receipts = [], receiptsLoaded = false, tempImg = null;
+  var ui = { mode: "roster", activeDay: "wed", openCp: null, adding: false, rcptAdding: false, editingId: null, modalImgs: null };
+  var receipts = [], receiptsLoaded = false, tempImgs = [], scanning = false;
   var rate = parseFloat(localStorage.getItem(RATE_KEY)) || 190;
 
   var useServer = false, fb = {};
@@ -297,22 +313,64 @@ html, body { background: #e9e4d7; }
     };
     reader.readAsDataURL(file);
   }
+  function renderPhotoPreview() {
+    var prev = document.getElementById("photoPick"); if (!prev) return;
+    if (!tempImgs.length) { prev.classList.remove("has"); prev.innerHTML = '<span class="ph-ico">📷</span><span class="ph-txt">아래 버튼으로 사진 추가 (여러 장 가능)</span>'; return; }
+    prev.classList.add("has");
+    var h = '<div class="thumbs">';
+    for (var i = 0; i < tempImgs.length; i++) h += '<div class="thumb"><img src="' + tempImgs[i] + '" alt="" /><button type="button" class="thumb-x" data-rm="' + i + '">×</button></div>';
+    h += '</div>';
+    prev.innerHTML = h;
+    var xs = prev.getElementsByClassName("thumb-x");
+    for (var k = 0; k < xs.length; k++) xs[k].onclick = function (e) { e.stopPropagation(); tempImgs.splice(parseInt(this.getAttribute("data-rm"), 10), 1); renderPhotoPreview(); };
+  }
+  function addFiles(files) {
+    var arr = Array.prototype.slice.call(files || []);
+    arr.forEach(function (f) { compressImage(f, function (u) { tempImgs.push(u); renderPhotoPreview(); maybeScan(u); }); });
+  }
+  function maybeScan(u) {
+    if (scanning) return;
+    var amtEl = document.getElementById("rAmount");
+    if (amtEl && parseFloat(amtEl.value) > 0) return; // 금액이 이미 있으면 스캔 안 함(영수증 외 사진으로 간주)
+    scanning = true;
+    scanReceipt(u, function () { scanning = false; });
+  }
+  function scanReceipt(dataUrl, done) {
+    var st = document.getElementById("scanStatus");
+    if (st) { st.textContent = "영수증 인식 중…"; st.className = "scan-status on"; }
+    fetch("/api/scan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image: dataUrl }) })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d || d.error) {
+          if (st) { st.textContent = (d && d.error === "no_key") ? "자동 인식 미설정 — 직접 입력하세요." : "자동 인식 실패 — 직접 입력하세요."; st.className = "scan-status err"; }
+          done && done(); return;
+        }
+        var amtEl = document.getElementById("rAmount"), purpEl = document.getElementById("rPurpose"), detEl = document.getElementById("rDetail");
+        if (amtEl && d.amount > 0 && !(parseFloat(amtEl.value) > 0)) amtEl.value = d.amount;
+        if (purpEl && d.merchant && !purpEl.value.trim()) purpEl.value = d.merchant;
+        if (detEl && d.items) detEl.value = (detEl.value ? detEl.value + "\n" : "") + d.items + (d.date ? "  (" + d.date + ")" : "");
+        if (st) { st.textContent = "✓ 자동 인식 완료 — 내용 확인 후 저장하세요."; st.className = "scan-status ok"; }
+        done && done();
+      })
+      .catch(function () { if (st) { st.textContent = "자동 인식 실패 — 직접 입력하세요."; st.className = "scan-status err"; } done && done(); });
+  }
   function submitReceipt() {
     var amtEl = document.getElementById("rAmount"), purpEl = document.getElementById("rPurpose"), payEl = document.getElementById("rPayer"), errEl = document.getElementById("rErr");
     var amount = parseFloat(amtEl ? amtEl.value : ""), purpose = (purpEl ? purpEl.value : "").trim(), payer = payEl ? payEl.value : "";
     var cardEl = document.getElementById("rCard"); var card = cardEl ? cardEl.value : "";
-    if (!tempImg) { errEl.textContent = "영수증 사진을 추가해 주세요."; return; }
+    var detEl = document.getElementById("rDetail"); var detail = detEl ? detEl.value.trim() : "";
+    if (!tempImgs.length) { errEl.textContent = "영수증 사진을 1장 이상 추가해 주세요."; return; }
     if (!(amount > 0)) { errEl.textContent = "금액(위안)을 입력해 주세요."; return; }
     if (!purpose) { errEl.textContent = "용도를 입력해 주세요."; return; }
     var editing = ui.editingId ? receipts.filter(function (r) { return r.id === ui.editingId; })[0] : null;
     var obj = {
       id: editing ? editing.id : ("r" + Date.now() + Math.floor(Math.random() * 1000)),
-      img: tempImg, amount: amount, purpose: purpose, payer: payer || "", card: card || "",
+      imgs: tempImgs.slice(), amount: amount, purpose: purpose, detail: detail || "", payer: payer || "", card: card || "",
       ts: editing ? editing.ts : Date.now()
     };
     receipts = receipts.filter(function (r) { return r.id !== obj.id; });
     receipts.push(obj);
-    tempImg = null; ui.rcptAdding = false; ui.editingId = null;
+    tempImgs = []; ui.rcptAdding = false; ui.editingId = null;
     if (useServer) { try { fb.fs.setDoc(fb.fs.doc(fb.db, "receipts", obj.id), obj); } catch (e) {} render(); }
     else { idbPut(obj, function () { render(); }); }
   }
@@ -341,7 +399,7 @@ html, body { background: #e9e4d7; }
       + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>인원 점호</button>'
       + '<button class="nav-item ' + (ui.mode === "receipts" ? "on" : "") + '" data-act="mode" data-mode="receipts">'
       + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l3-2 3 2 3-2 3 2 3-2V2l-3 2-3-2-3 2-3-2-3 2z"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="14" y2="13"/></svg>영수증 내역</button></nav>';
-    if (ui.modalImg) html += '<div class="modal" data-act="modal-close"><button class="modal-close" data-act="modal-close">×</button><img src="' + ui.modalImg + '" alt="영수증" /></div>';
+    if (ui.modalImgs && ui.modalImgs.length) html += '<div class="modal" data-act="modal-close"><button class="modal-close" data-act="modal-close">×</button><div class="modal-scroll">' + ui.modalImgs.map(function (u) { return '<img src="' + u + '" alt="영수증" />'; }).join("") + '</div></div>';
 
     document.getElementById("root").innerHTML = html;
     var sd = document.getElementById("saveDot"); if (sd) sd.style.display = saveFlash ? "inline" : "none";
@@ -351,15 +409,13 @@ html, body { background: #e9e4d7; }
       if (inp) { inp.focus(); inp.addEventListener("keydown", function (e) { if (e.key === "Enter") addCp(inp.value); }); }
     }
     if (ui.mode === "receipts" && (ui.rcptAdding || ui.editingId)) {
-      var prev = document.getElementById("photoPick");
       var galEl = document.getElementById("rcptFile"), camEl = document.getElementById("rcptCam");
       var galBtn = document.getElementById("btnGal"), camBtn = document.getElementById("btnCam");
-      function onPick(el) { return function () { var f = el.files && el.files[0]; if (!f) return; compressImage(f, function (u) { tempImg = u; if (prev) prev.innerHTML = '<img src="' + u + '" alt="미리보기" />'; }); }; }
-      if (galEl) galEl.onchange = onPick(galEl);
-      if (camEl) camEl.onchange = onPick(camEl);
+      renderPhotoPreview();
+      if (galEl) galEl.onchange = function () { addFiles(galEl.files); };
+      if (camEl) camEl.onchange = function () { addFiles(camEl.files); };
       if (galBtn && galEl) galBtn.onclick = function () { galEl.value = ""; galEl.click(); };
       if (camBtn && camEl) camBtn.onclick = function () { camEl.value = ""; camEl.click(); };
-      if (prev && galEl) prev.onclick = function () { galEl.value = ""; galEl.click(); };
     }
   }
 
@@ -419,12 +475,14 @@ html, body { background: #e9e4d7; }
     var ed = ui.editingId ? receipts.filter(function (r) { return r.id === ui.editingId; })[0] : null;
     if (ui.rcptAdding || ed) {
       html += '<div class="rform"><h3>' + (ed ? '영수증 수정' : '영수증 추가') + '</h3>'
-        + '<div class="photo-pick" id="photoPick">' + (tempImg ? '<img src="' + tempImg + '" alt="미리보기" />' : '<span class="ph-ico">📷</span><span class="ph-txt">아래 버튼으로 사진 추가</span>') + '</div>'
+        + '<div class="photo-pick" id="photoPick"></div>'
         + '<div class="photo-btns"><button type="button" class="photo-btn" id="btnCam">📷 사진 촬영</button><button type="button" class="photo-btn alt" id="btnGal">🖼 갤러리 선택</button></div>'
+        + '<div class="scan-status" id="scanStatus"></div>'
         + '<div class="field"><label>금액 <span class="req">*</span> (위안 ¥)</label><div class="money-row"><span class="yuan">¥</span><input id="rAmount" type="number" inputmode="decimal" placeholder="0" value="' + (ed ? ed.amount : '') + '" /></div></div>'
         + '<div class="field"><label>용도 <span class="req">*</span></label><input class="f-input" id="rPurpose" type="text" placeholder="예: 단체 석식, 택시, 기념품" value="' + (ed ? esc(ed.purpose) : '') + '" /></div>'
+        + '<div class="field"><label>세부 내역</label><textarea class="f-input f-area" id="rDetail" rows="3" placeholder="영수증 항목·메모 (사진 스캔 시 자동 입력)">' + (ed ? esc(ed.detail || "") : "") + '</textarea></div>'
         + '<div class="field"><label>결제자 (선택)</label><select class="f-select" id="rPayer"><option value=""' + (ed && ed.payer ? '' : ' selected') + '>선택 안 함</option>'
-        + ALL_MEMBERS.map(function (m) { return '<option value="' + esc(m) + '"' + (ed && ed.payer === m ? ' selected' : '') + '>' + esc(m) + '</option>'; }).join("") + '</select></div>'
+        + PAYER_LIST.map(function (m) { return '<option value="' + esc(m) + '"' + (ed && ed.payer === m ? ' selected' : '') + '>' + esc(m) + '</option>'; }).join("") + '</select></div>'
         + '<div class="field"><label>결제 카드</label><select class="f-select" id="rCard">'
         + CARDS.map(function (c) { return '<option value="' + c.id + '"' + (ed && ed.card === c.id ? ' selected' : '') + '>' + esc(cardLabel(c.id)) + '</option>'; }).join("") + '</select></div>'
         + '<div class="rform-err" id="rErr"></div>'
@@ -440,10 +498,12 @@ html, body { background: #e9e4d7; }
       sorted.forEach(function (r) {
         var d = new Date(r.ts);
         var ds = d.getFullYear() + "." + ("0" + (d.getMonth() + 1)).slice(-2) + "." + ("0" + d.getDate()).slice(-2) + " " + ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2);
-        html += '<div class="rcpt-item"><img class="rcpt-thumb" src="' + r.img + '" data-act="view" data-img="' + r.id + '" alt="영수증" />'
+        var imgs = getImgs(r);
+        html += '<div class="rcpt-item"><div class="rcpt-thumbwrap" data-act="view" data-img="' + r.id + '"><img class="rcpt-thumb" src="' + (imgs[0] || "") + '" alt="영수증" />' + (imgs.length > 1 ? '<span class="thumb-badge">+' + (imgs.length - 1) + '</span>' : '') + '</div>'
           + '<div class="rcpt-info"><div class="rcpt-purpose">' + esc(r.purpose) + '</div>'
           + '<div class="rcpt-amt"><small>¥</small>' + fmt(r.amount) + '</div>'
           + '<div class="rcpt-krw">≈ ₩' + krw(r.amount) + '</div>'
+          + (r.detail ? '<div class="rcpt-detail">' + esc(r.detail) + '</div>' : '')
           + '<div class="rcpt-meta"><span>' + ds + '</span>' + (r.payer ? '<span class="rcpt-payer">' + esc(r.payer) + '</span>' : '') + (r.card ? '<span class="rcpt-card">' + esc(cardLabel(r.card)) + '</span>' : '') + '</div></div>'
           + '<div class="rcpt-acts"><button class="rcpt-edit" data-act="edit" data-id="' + r.id + '">수정</button><button class="rcpt-x" data-act="rcpt-del" data-id="' + r.id + '">×</button></div></div>';
       });
@@ -468,13 +528,13 @@ html, body { background: #e9e4d7; }
     else if (act === "add-open") { ui.adding = true; render(); }
     else if (act === "add-cancel") { ui.adding = false; render(); }
     else if (act === "add-submit") { var i = document.getElementById("addInput"); addCp(i ? i.value : ""); }
-    else if (act === "rcpt-add") { tempImg = null; ui.editingId = null; ui.rcptAdding = true; render(); }
-    else if (act === "edit") { var eid = btn.getAttribute("data-id"); var er = receipts.filter(function (x) { return x.id === eid; })[0]; if (er) { ui.editingId = eid; ui.rcptAdding = false; tempImg = er.img; render(); } }
-    else if (act === "rcpt-cancel") { tempImg = null; ui.rcptAdding = false; ui.editingId = null; render(); }
+    else if (act === "rcpt-add") { tempImgs = []; ui.editingId = null; ui.rcptAdding = true; render(); }
+    else if (act === "edit") { var eid = btn.getAttribute("data-id"); var er = receipts.filter(function (x) { return x.id === eid; })[0]; if (er) { ui.editingId = eid; ui.rcptAdding = false; tempImgs = getImgs(er).slice(); render(); } }
+    else if (act === "rcpt-cancel") { tempImgs = []; ui.rcptAdding = false; ui.editingId = null; render(); }
     else if (act === "rcpt-submit") { submitReceipt(); }
     else if (act === "rcpt-del") { deleteReceipt(btn.getAttribute("data-id")); }
-    else if (act === "view") { var id = btn.getAttribute("data-img"); var r = receipts.filter(function (x) { return x.id === id; })[0]; if (r) { ui.modalImg = r.img; render(); } }
-    else if (act === "modal-close") { ui.modalImg = null; render(); }
+    else if (act === "view") { var id = btn.getAttribute("data-img"); var r = receipts.filter(function (x) { return x.id === id; })[0]; if (r) { ui.modalImgs = getImgs(r); render(); } }
+    else if (act === "modal-close") { ui.modalImgs = null; render(); }
   });
   document.getElementById("root").addEventListener("change", function (e) {
     if (e.target && e.target.id === "rateInput") {
