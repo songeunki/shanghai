@@ -88,12 +88,12 @@ html, body { background: #e9e4d7; }
 
 .foot { text-align: center; color: #a59f8d; font-size: 12px; margin-top: 18px; padding: 0 16px; }
 
-/* Receipts */
 .rcpt-wrap { padding: 14px 14px 0; }
 .rcpt-total { background: linear-gradient(150deg,#13403a,#0b2622); color:#f4f1e9; border-radius:16px; padding:18px 18px 16px; margin-bottom:14px; }
 .rcpt-total-lb { font-size:12px; letter-spacing:.04em; color:#9fc4b6; }
 .rcpt-total-amt { font-family:'Gowun Batang',serif; font-size:32px; font-weight:700; margin:4px 0 2px; }
 .rcpt-total-amt small { font-size:18px; color:#c9a24b; margin-right:4px; }
+.rcpt-total-krw { font-size:15px; color:#e7e0cf; font-weight:600; margin-bottom:6px; }
 .rcpt-total-sub { font-size:12.5px; color:#9fc4b6; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .rate-input { width:62px; background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.18); color:#f4f1e9; border-radius:7px; padding:3px 6px; font-size:12px; font-family:inherit; outline:none; }
 
@@ -124,7 +124,8 @@ html, body { background: #e9e4d7; }
 .rcpt-purpose { font-size:15px; font-weight:600; color:#1d2b27; word-break:break-all; }
 .rcpt-amt { font-size:17px; font-weight:700; color:#13403a; margin-top:2px; }
 .rcpt-amt small { color:#c9a24b; margin-right:2px; }
-.rcpt-meta { font-size:11.5px; color:#a59f8d; margin-top:4px; display:flex; gap:7px; flex-wrap:wrap; align-items:center; }
+.rcpt-krw { font-size:12.5px; color:#a59f8d; font-weight:600; margin-top:1px; }
+.rcpt-meta { font-size:11.5px; color:#a59f8d; margin-top:5px; display:flex; gap:7px; flex-wrap:wrap; align-items:center; }
 .rcpt-payer { background:#f0ece0; color:#5e5a4d; padding:2px 7px; border-radius:6px; font-weight:600; }
 .rcpt-x { background:none; border:none; color:#c4bdab; font-size:20px; cursor:pointer; padding:2px 4px; line-height:1; flex-shrink:0; }
 .rcpt-empty { text-align:center; color:#a59f8d; font-size:13.5px; padding:40px 20px; }
@@ -146,6 +147,21 @@ html, body { background: #e9e4d7; }
 <script>
 (function () {
   "use strict";
+
+  /* ===========================================================
+     ▼▼▼  서버 저장(Firebase) 설정 — 여기에 본인 프로젝트 값 붙여넣기 ▼▼▼
+     Firebase 콘솔 > 프로젝트 설정 > 일반 > 내 앱(웹) > SDK 설정/구성
+     비워두면(여기에 글자가 남아있으면) 이 기기에만 저장됩니다.
+     =========================================================== */
+  var FIREBASE_CONFIG = {
+    apiKey: "AIzaSyBpkjorced-muFcDVTevKhph_ZzZRpvOgA",
+    authDomain: "shanghai-dc6dd.firebaseapp.com",
+    projectId: "shanghai-dc6dd",
+    storageBucket: "shanghai-dc6dd.firebasestorage.app",
+    messagingSenderId: "639286955021",
+    appId: "1:639286955021:web:53173b1d9f74b2b9295944"
+  };
+  /* ▲▲▲  설정 끝  ▲▲▲ */
 
   var ROOMS = [
     { room: 1, members: ["황관복 전무", "오성식 부장"] },
@@ -193,18 +209,22 @@ html, body { background: #e9e4d7; }
     });
   }
   function fmt(n) { return Number(n).toLocaleString("ko-KR", { maximumFractionDigits: 2 }); }
+  function krw(cny) { return Math.round(Number(cny) * rate).toLocaleString("ko-KR"); }
 
   var data, saveFlash = false, saveTimer = null;
   var ui = { mode: "roster", activeDay: "wed", openCp: null, adding: false, rcptAdding: false, modalImg: null };
   var receipts = [], receiptsLoaded = false, tempImg = null;
   var rate = parseFloat(localStorage.getItem(RATE_KEY)) || 190;
 
+  var useServer = false, fb = {};
+
   try {
     var raw = localStorage.getItem(STORAGE_KEY);
     data = raw ? JSON.parse(raw) : buildInitial();
+    if (data && data.rate) rate = data.rate;
   } catch (e) { data = buildInitial(); }
 
-  /* ---- IndexedDB for receipts ---- */
+  /* ---- 로컬 백업용 IndexedDB (서버 미설정 시) ---- */
   var DB = null;
   function openDB(cb) {
     try {
@@ -219,77 +239,43 @@ html, body { background: #e9e4d7; }
   }
   function idbAll(cb) {
     if (!DB) { cb([]); return; }
-    try {
-      var tx = DB.transaction("receipts", "readonly");
-      var store = tx.objectStore("receipts");
-      var req = store.getAll();
-      req.onsuccess = function () { cb(req.result || []); };
-      req.onerror = function () { cb([]); };
+    try { var req = DB.transaction("receipts", "readonly").objectStore("receipts").getAll();
+      req.onsuccess = function () { cb(req.result || []); }; req.onerror = function () { cb([]); };
     } catch (e) { cb([]); }
   }
-  function idbPut(obj, cb) {
-    try { var tx = DB.transaction("receipts", "readwrite"); tx.objectStore("receipts").put(obj); tx.oncomplete = function () { cb && cb(); }; }
-    catch (e) { cb && cb(); }
-  }
-  function idbDel(id, cb) {
-    try { var tx = DB.transaction("receipts", "readwrite"); tx.objectStore("receipts").delete(id); tx.oncomplete = function () { cb && cb(); }; }
-    catch (e) { cb && cb(); }
-  }
+  function idbPut(obj, cb) { try { var tx = DB.transaction("receipts", "readwrite"); tx.objectStore("receipts").put(obj); tx.oncomplete = function () { cb && cb(); }; } catch (e) { cb && cb(); } }
+  function idbDel(id, cb) { try { var tx = DB.transaction("receipts", "readwrite"); tx.objectStore("receipts").delete(id); tx.oncomplete = function () { cb && cb(); }; } catch (e) { cb && cb(); } }
 
-  function persist() {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch (e) {}
+  /* ---- 저장(점호) ---- */
+  function saveRollcall() {
+    if (useServer) { try { fb.fs.setDoc(fb.rollcallRef, data); } catch (e) {} }
+    else { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch (e) {} }
     saveFlash = true;
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(function () { saveFlash = false; var el = document.getElementById("saveDot"); if (el) el.style.display = "none"; }, 1200);
   }
 
-  function presentOf(dayKey, cpId) {
-    var m = data.checks[cpKey(dayKey, cpId)] || {}; var n = 0;
-    ALL_MEMBERS.forEach(function (name) { if (m[name]) n++; }); return n;
-  }
+  function presentOf(dayKey, cpId) { var m = data.checks[cpKey(dayKey, cpId)] || {}; var n = 0; ALL_MEMBERS.forEach(function (name) { if (m[name]) n++; }); return n; }
   function isPresent(dayKey, cpId, name) { return !!(data.checks[cpKey(dayKey, cpId)] || {})[name]; }
-  function dayProgress(dayKey) {
-    var cps = data.checkpoints[dayKey] || []; if (!cps.length) return 0; var done = 0;
-    cps.forEach(function (c) { if (presentOf(dayKey, c.id) === TOTAL) done++; }); return done / cps.length;
-  }
-  function toggle(dayKey, cpId, name) {
-    var key = cpKey(dayKey, cpId); var cur = data.checks[key] || {};
-    if (cur[name]) delete cur[name]; else cur[name] = true; data.checks[key] = cur; persist(); render();
-  }
-  function setAll(dayKey, cpId, val) {
-    var key = cpKey(dayKey, cpId); var cur = {};
-    if (val) ALL_MEMBERS.forEach(function (n) { cur[n] = true; }); data.checks[key] = cur; persist(); render();
-  }
-  function moveCp(dayKey, cpId, dir) {
-    var list = data.checkpoints[dayKey] || []; var i = -1;
-    list.forEach(function (c, idx) { if (c.id === cpId) i = idx; }); var j = i + dir;
-    if (i < 0 || j < 0 || j >= list.length) return;
-    var tmp = list[i]; list[i] = list[j]; list[j] = tmp; persist(); render();
-  }
-  function removeCp(dayKey, cpId) {
-    data.checkpoints[dayKey] = (data.checkpoints[dayKey] || []).filter(function (c) { return c.id !== cpId; });
-    delete data.checks[cpKey(dayKey, cpId)];
-    if (ui.openCp === cpId) ui.openCp = null; persist(); render();
-  }
-  function addCp(label) {
-    label = (label || "").trim(); if (!label) return;
-    var list = data.checkpoints[ui.activeDay] || [];
-    list.push({ id: ui.activeDay + "_c" + Date.now(), label: label });
-    data.checkpoints[ui.activeDay] = list; ui.adding = false; persist(); render();
-  }
+  function dayProgress(dayKey) { var cps = data.checkpoints[dayKey] || []; if (!cps.length) return 0; var done = 0; cps.forEach(function (c) { if (presentOf(dayKey, c.id) === TOTAL) done++; }); return done / cps.length; }
+  function toggle(dayKey, cpId, name) { var key = cpKey(dayKey, cpId); var cur = data.checks[key] || {}; if (cur[name]) delete cur[name]; else cur[name] = true; data.checks[key] = cur; saveRollcall(); render(); }
+  function setAll(dayKey, cpId, val) { var key = cpKey(dayKey, cpId); var cur = {}; if (val) ALL_MEMBERS.forEach(function (n) { cur[n] = true; }); data.checks[key] = cur; saveRollcall(); render(); }
+  function moveCp(dayKey, cpId, dir) { var list = data.checkpoints[dayKey] || []; var i = -1; list.forEach(function (c, idx) { if (c.id === cpId) i = idx; }); var j = i + dir; if (i < 0 || j < 0 || j >= list.length) return; var t = list[i]; list[i] = list[j]; list[j] = t; saveRollcall(); render(); }
+  function removeCp(dayKey, cpId) { data.checkpoints[dayKey] = (data.checkpoints[dayKey] || []).filter(function (c) { return c.id !== cpId; }); delete data.checks[cpKey(dayKey, cpId)]; if (ui.openCp === cpId) ui.openCp = null; saveRollcall(); render(); }
+  function addCp(label) { label = (label || "").trim(); if (!label) return; var list = data.checkpoints[ui.activeDay] || []; list.push({ id: ui.activeDay + "_c" + Date.now(), label: label }); data.checkpoints[ui.activeDay] = list; ui.adding = false; saveRollcall(); render(); }
 
-  /* ---- receipts ---- */
+  /* ---- 영수증 ---- */
   function compressImage(file, cb) {
     var reader = new FileReader();
     reader.onload = function (e) {
       var img = new Image();
       img.onload = function () {
-        var max = 1200, w = img.width, h = img.height;
+        var max = 1000, w = img.width, h = img.height;
         if (w > h && w > max) { h = Math.round(h * max / w); w = max; }
         else if (h >= w && h > max) { w = Math.round(w * max / h); h = max; }
         var c = document.createElement("canvas"); c.width = w; c.height = h;
         c.getContext("2d").drawImage(img, 0, 0, w, h);
-        try { cb(c.toDataURL("image/jpeg", 0.7)); } catch (err) { cb(e.target.result); }
+        try { cb(c.toDataURL("image/jpeg", 0.6)); } catch (err) { cb(e.target.result); }
       };
       img.onerror = function () { cb(e.target.result); };
       img.src = e.target.result;
@@ -297,52 +283,45 @@ html, body { background: #e9e4d7; }
     reader.readAsDataURL(file);
   }
   function submitReceipt() {
-    var amtEl = document.getElementById("rAmount");
-    var purpEl = document.getElementById("rPurpose");
-    var payEl = document.getElementById("rPayer");
-    var errEl = document.getElementById("rErr");
-    var amount = parseFloat(amtEl ? amtEl.value : "");
-    var purpose = (purpEl ? purpEl.value : "").trim();
-    var payer = payEl ? payEl.value : "";
+    var amtEl = document.getElementById("rAmount"), purpEl = document.getElementById("rPurpose"), payEl = document.getElementById("rPayer"), errEl = document.getElementById("rErr");
+    var amount = parseFloat(amtEl ? amtEl.value : ""), purpose = (purpEl ? purpEl.value : "").trim(), payer = payEl ? payEl.value : "";
     if (!tempImg) { errEl.textContent = "영수증 사진을 추가해 주세요."; return; }
     if (!(amount > 0)) { errEl.textContent = "금액(위안)을 입력해 주세요."; return; }
     if (!purpose) { errEl.textContent = "용도를 입력해 주세요."; return; }
-    var obj = { id: "r" + Date.now(), img: tempImg, amount: amount, purpose: purpose, payer: payer || "", ts: Date.now() };
-    idbPut(obj, function () { receipts.push(obj); tempImg = null; ui.rcptAdding = false; render(); });
+    var obj = { id: "r" + Date.now() + Math.floor(Math.random() * 1000), img: tempImg, amount: amount, purpose: purpose, payer: payer || "", ts: Date.now() };
+    if (useServer) {
+      try { fb.fs.setDoc(fb.fs.doc(fb.db, "receipts", obj.id), obj); } catch (e) {}
+      receipts.push(obj); tempImg = null; ui.rcptAdding = false; render();
+    } else {
+      idbPut(obj, function () { receipts.push(obj); tempImg = null; ui.rcptAdding = false; render(); });
+    }
   }
   function deleteReceipt(id) {
-    idbDel(id, function () { receipts = receipts.filter(function (r) { return r.id !== id; }); render(); });
+    if (useServer) {
+      receipts = receipts.filter(function (r) { return r.id !== id; }); render();
+      try { fb.fs.deleteDoc(fb.fs.doc(fb.db, "receipts", id)); } catch (e) {}
+    } else {
+      idbDel(id, function () { receipts = receipts.filter(function (r) { return r.id !== id; }); render(); });
+    }
   }
 
-  /* ---- render ---- */
+  /* ---- 렌더 ---- */
   function render() {
     var html = '<div class="screen">';
-
     html += '<header class="hdr"><div class="hdr-grain"></div>'
       + '<div class="hdr-top"><span class="hdr-kicker">CORPORATE TRIP · SHANGHAI</span>'
       + '<span class="dot-save" id="saveDot" style="display:none">● 저장됨</span></div>'
       + '<h1 class="hdr-title">상해 전시회 ' + (ui.mode === "receipts" ? "지출 내역" : "인원 관리") + '</h1>'
       + '<div class="hdr-meta"><span>수 · 목 · 금 · 토</span><span class="sep">/</span><span>4일</span>'
       + '<span class="sep">/</span><span>9개 방 · ' + TOTAL + '명</span></div></header>';
-
-    if (ui.mode === "roster") html += renderRoster();
-    else html += renderReceipts();
-
+    html += (ui.mode === "roster") ? renderRoster() : renderReceipts();
     html += '</div>';
-
-    /* bottom nav */
     html += '<nav class="botnav">'
       + '<button class="nav-item ' + (ui.mode === "roster" ? "on" : "") + '" data-act="mode" data-mode="roster">'
-      + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>'
-      + '인원 점호</button>'
+      + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>인원 점호</button>'
       + '<button class="nav-item ' + (ui.mode === "receipts" ? "on" : "") + '" data-act="mode" data-mode="receipts">'
-      + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l3-2 3 2 3-2 3 2 3-2V2l-3 2-3-2-3 2-3-2-3 2z"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="14" y2="13"/></svg>'
-      + '영수증 내역</button></nav>';
-
-    if (ui.modalImg) {
-      html += '<div class="modal" data-act="modal-close"><button class="modal-close" data-act="modal-close">×</button>'
-        + '<img src="' + ui.modalImg + '" alt="영수증" /></div>';
-    }
+      + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l3-2 3 2 3-2 3 2 3-2V2l-3 2-3-2-3 2-3-2-3 2z"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="14" y2="13"/></svg>영수증 내역</button></nav>';
+    if (ui.modalImg) html += '<div class="modal" data-act="modal-close"><button class="modal-close" data-act="modal-close">×</button><img src="' + ui.modalImg + '" alt="영수증" /></div>';
 
     document.getElementById("root").innerHTML = html;
     var sd = document.getElementById("saveDot"); if (sd) sd.style.display = saveFlash ? "inline" : "none";
@@ -352,17 +331,10 @@ html, body { background: #e9e4d7; }
       if (inp) { inp.focus(); inp.addEventListener("keydown", function (e) { if (e.key === "Enter") addCp(inp.value); }); }
     }
     if (ui.mode === "receipts" && ui.rcptAdding) {
-      var prev = document.getElementById("photoPick");
-      var fileEl = document.getElementById("rcptFile");
+      var prev = document.getElementById("photoPick"), fileEl = document.getElementById("rcptFile");
       if (prev && fileEl) {
         prev.onclick = function () { fileEl.value = ""; fileEl.click(); };
-        fileEl.onchange = function () {
-          var f = fileEl.files && fileEl.files[0]; if (!f) return;
-          compressImage(f, function (dataUrl) {
-            tempImg = dataUrl;
-            prev.innerHTML = '<img src="' + dataUrl + '" alt="미리보기" />';
-          });
-        };
+        fileEl.onchange = function () { var f = fileEl.files && fileEl.files[0]; if (!f) return; compressImage(f, function (u) { tempImg = u; prev.innerHTML = '<img src="' + u + '" alt="미리보기" />'; }); };
       }
     }
   }
@@ -372,44 +344,28 @@ html, body { background: #e9e4d7; }
     var dayInfo = DAYS.filter(function (d) { return d.key === ui.activeDay; })[0];
     var html = '<nav class="tabs">';
     DAYS.forEach(function (d) {
-      var pr = Math.round(dayProgress(d.key) * 100);
-      var on = ui.activeDay === d.key ? " tab-on" : "";
-      html += '<button class="tab' + on + '" data-act="day" data-day="' + d.key + '">'
-        + '<span class="tab-wd">' + d.weekday + '</span><span class="tab-lb">' + d.label + '</span>'
-        + '<span class="tab-bar"><span class="tab-bar-fill" style="width:' + pr + '%"></span></span></button>';
+      var pr = Math.round(dayProgress(d.key) * 100), on = ui.activeDay === d.key ? " tab-on" : "";
+      html += '<button class="tab' + on + '" data-act="day" data-day="' + d.key + '"><span class="tab-wd">' + d.weekday + '</span><span class="tab-lb">' + d.label + '</span><span class="tab-bar"><span class="tab-bar-fill" style="width:' + pr + '%"></span></span></button>';
     });
-    html += '</nav>';
-    html += '<div class="theme-strip"><span class="theme-badge">' + dayInfo.theme + '</span>'
-      + '<span class="theme-text">' + dayInfo.weekday + '요일 · ' + dayCps.length + '개 점호 시점</span></div>';
-    html += '<main class="list">';
+    html += '</nav><div class="theme-strip"><span class="theme-badge">' + dayInfo.theme + '</span><span class="theme-text">' + dayInfo.weekday + '요일 · ' + dayCps.length + '개 점호 시점</span></div><main class="list">';
     dayCps.forEach(function (cp, idx) {
       var p = presentOf(ui.activeDay, cp.id), done = p === TOTAL, open = ui.openCp === cp.id;
       var statusCls = done ? "status-ok" : (p > 0 ? "status-mid" : "");
-      html += '<section class="card' + (done ? " card-done" : "") + '">';
-      html += '<button class="card-head" data-act="open" data-cp="' + cp.id + '">'
-        + '<span class="status ' + statusCls + '">' + (done ? "✓" : p) + '</span>'
-        + '<span class="card-title">' + esc(cp.label) + '</span>'
-        + '<span class="count' + (done ? " count-ok" : "") + '">' + p + '/' + TOTAL + '</span>'
-        + '<span class="chev' + (open ? " chev-open" : "") + '">›</span></button>';
-      html += '<div class="progress"><div class="progress-fill' + (done ? " progress-done" : "")
-        + '" style="width:' + (p / TOTAL * 100) + '%"></div></div>';
+      html += '<section class="card' + (done ? " card-done" : "") + '"><button class="card-head" data-act="open" data-cp="' + cp.id + '"><span class="status ' + statusCls + '">' + (done ? "✓" : p) + '</span><span class="card-title">' + esc(cp.label) + '</span><span class="count' + (done ? " count-ok" : "") + '">' + p + '/' + TOTAL + '</span><span class="chev' + (open ? " chev-open" : "") + '">›</span></button>';
+      html += '<div class="progress"><div class="progress-fill' + (done ? " progress-done" : "") + '" style="width:' + (p / TOTAL * 100) + '%"></div></div>';
       if (open) {
         var missing = TOTAL - p;
-        html += '<div class="card-body"><div class="card-actions">';
-        html += missing > 0 ? '<span class="miss">미점검 ' + missing + '명</span>' : '<span class="miss miss-ok">전원 확인 완료</span>';
-        html += '<div class="act-btns">'
+        html += '<div class="card-body"><div class="card-actions">' + (missing > 0 ? '<span class="miss">미점검 ' + missing + '명</span>' : '<span class="miss miss-ok">전원 확인 완료</span>') + '<div class="act-btns">'
           + '<button class="act act-move" data-act="move" data-cp="' + cp.id + '" data-dir="-1"' + (idx === 0 ? " disabled" : "") + '>↑</button>'
           + '<button class="act act-move" data-act="move" data-cp="' + cp.id + '" data-dir="1"' + (idx === dayCps.length - 1 ? " disabled" : "") + '>↓</button>'
           + '<button class="act" data-act="all" data-cp="' + cp.id + '">전체 체크</button>'
           + '<button class="act act-ghost" data-act="clear" data-cp="' + cp.id + '">초기화</button>'
-          + '<button class="act act-del" data-act="remove" data-cp="' + cp.id + '">삭제</button></div></div>';
-        html += '<div class="rooms">';
+          + '<button class="act act-del" data-act="remove" data-cp="' + cp.id + '">삭제</button></div></div><div class="rooms">';
         ROOMS.forEach(function (r) {
           html += '<div class="room"><span class="room-no">방' + r.room + '</span><div class="chips">';
           r.members.forEach(function (name) {
             var on2 = isPresent(ui.activeDay, cp.id, name);
-            html += '<button class="chip' + (on2 ? " chip-on" : "") + '" data-act="toggle" data-cp="' + cp.id + '" data-name="' + esc(name) + '">'
-              + '<span class="chip-box">' + (on2 ? "✓" : "") + '</span>' + esc(name) + '</button>';
+            html += '<button class="chip' + (on2 ? " chip-on" : "") + '" data-act="toggle" data-cp="' + cp.id + '" data-name="' + esc(name) + '"><span class="chip-box">' + (on2 ? "✓" : "") + '</span>' + esc(name) + '</button>';
           });
           html += '</div></div>';
         });
@@ -417,69 +373,53 @@ html, body { background: #e9e4d7; }
       }
       html += '</section>';
     });
-    if (ui.adding) {
-      html += '<div class="add-box"><input class="add-input" id="addInput" placeholder="점호 시점 이름 (예: 야시장 집합)" />'
-        + '<div class="add-btns"><button class="act" data-act="add-submit">추가</button>'
-        + '<button class="act act-ghost" data-act="add-cancel">취소</button></div></div>';
-    } else {
-      html += '<button class="add-trigger" data-act="add-open">+ 점호 시점 추가</button>';
-    }
-    html += '<p class="foot">이름을 탭하면 출석 체크 · 기록은 이 기기에 자동 저장됩니다</p></main>';
+    if (ui.adding) html += '<div class="add-box"><input class="add-input" id="addInput" placeholder="점호 시점 이름 (예: 야시장 집합)" /><div class="add-btns"><button class="act" data-act="add-submit">추가</button><button class="act act-ghost" data-act="add-cancel">취소</button></div></div>';
+    else html += '<button class="add-trigger" data-act="add-open">+ 점호 시점 추가</button>';
+    html += '<p class="foot">이름을 탭하면 출석 체크 · ' + (useServer ? "서버에 저장되어 여러 기기에서 공유됩니다" : "이 기기에 자동 저장됩니다") + '</p></main>';
     return html;
   }
 
   function renderReceipts() {
     var html = '<div class="rcpt-wrap">';
     var total = receipts.reduce(function (s, r) { return s + (Number(r.amount) || 0); }, 0);
-    var krw = Math.round(total * rate);
     html += '<div class="rcpt-total"><div class="rcpt-total-lb">총 지출 (위안화)</div>'
       + '<div class="rcpt-total-amt"><small>¥</small>' + fmt(total) + '</div>'
-      + '<div class="rcpt-total-sub"><span>' + receipts.length + '건</span><span>≈ ₩' + krw.toLocaleString("ko-KR") + '</span>'
-      + '<span>환율 ₩<input class="rate-input" id="rateInput" type="number" inputmode="decimal" value="' + rate + '" />/¥</span></div></div>';
-
+      + '<div class="rcpt-total-krw">≈ ₩' + krw(total) + '</div>'
+      + '<div class="rcpt-total-sub"><span>' + receipts.length + '건</span><span>환율 ₩<input class="rate-input" id="rateInput" type="number" inputmode="decimal" value="' + rate + '" />/¥</span></div></div>';
     if (ui.rcptAdding) {
       html += '<div class="rform"><h3>영수증 추가</h3>'
         + '<div class="photo-pick" id="photoPick">' + (tempImg ? '<img src="' + tempImg + '" alt="미리보기" />' : '<span class="ph-ico">📷</span><span class="ph-txt">사진 촬영 / 갤러리 선택</span>') + '</div>'
-        + '<div class="field"><label>금액 <span class="req">*</span> (위안 ¥)</label>'
-        + '<div class="money-row"><span class="yuan">¥</span><input id="rAmount" type="number" inputmode="decimal" placeholder="0" /></div></div>'
-        + '<div class="field"><label>용도 <span class="req">*</span></label>'
-        + '<input class="f-input" id="rPurpose" type="text" placeholder="예: 단체 석식, 택시, 기념품" /></div>'
+        + '<div class="field"><label>금액 <span class="req">*</span> (위안 ¥)</label><div class="money-row"><span class="yuan">¥</span><input id="rAmount" type="number" inputmode="decimal" placeholder="0" /></div></div>'
+        + '<div class="field"><label>용도 <span class="req">*</span></label><input class="f-input" id="rPurpose" type="text" placeholder="예: 단체 석식, 택시, 기념품" /></div>'
         + '<div class="field"><label>결제자 (선택)</label><select class="f-select" id="rPayer"><option value="">선택 안 함</option>'
-        + ALL_MEMBERS.map(function (m) { return '<option value="' + esc(m) + '">' + esc(m) + '</option>'; }).join("")
-        + '</select></div>'
+        + ALL_MEMBERS.map(function (m) { return '<option value="' + esc(m) + '">' + esc(m) + '</option>'; }).join("") + '</select></div>'
         + '<div class="rform-err" id="rErr"></div>'
-        + '<div class="rform-btns"><button class="act" data-act="rcpt-submit">저장</button>'
-        + '<button class="act act-ghost" data-act="rcpt-cancel">취소</button></div></div>';
+        + '<div class="rform-btns"><button class="act" data-act="rcpt-submit">저장</button><button class="act act-ghost" data-act="rcpt-cancel">취소</button></div></div>';
     } else {
       html += '<button class="rcpt-add" data-act="rcpt-add">+ 영수증 추가</button>';
     }
-
-    if (!receiptsLoaded) {
-      html += '<div class="rcpt-empty">불러오는 중…</div>';
-    } else if (receipts.length === 0 && !ui.rcptAdding) {
-      html += '<div class="rcpt-empty">아직 등록된 영수증이 없어요.<br/>위 버튼으로 사진·금액·용도를 등록하세요.</div>';
-    } else {
+    if (!receiptsLoaded) html += '<div class="rcpt-empty">불러오는 중…</div>';
+    else if (receipts.length === 0 && !ui.rcptAdding) html += '<div class="rcpt-empty">아직 등록된 영수증이 없어요.<br/>위 버튼으로 사진·금액·용도를 등록하세요.</div>';
+    else {
       var sorted = receipts.slice().sort(function (a, b) { return b.ts - a.ts; });
       html += '<div class="rcpt-list">';
       sorted.forEach(function (r) {
         var d = new Date(r.ts);
-        var ds = d.getFullYear() + "." + ("0" + (d.getMonth() + 1)).slice(-2) + "." + ("0" + d.getDate()).slice(-2)
-          + " " + ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2);
-        html += '<div class="rcpt-item">'
-          + '<img class="rcpt-thumb" src="' + r.img + '" data-act="view" data-img="' + r.id + '" alt="영수증" />'
+        var ds = d.getFullYear() + "." + ("0" + (d.getMonth() + 1)).slice(-2) + "." + ("0" + d.getDate()).slice(-2) + " " + ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2);
+        html += '<div class="rcpt-item"><img class="rcpt-thumb" src="' + r.img + '" data-act="view" data-img="' + r.id + '" alt="영수증" />'
           + '<div class="rcpt-info"><div class="rcpt-purpose">' + esc(r.purpose) + '</div>'
           + '<div class="rcpt-amt"><small>¥</small>' + fmt(r.amount) + '</div>'
-          + '<div class="rcpt-meta"><span>' + ds + '</span>'
-          + (r.payer ? '<span class="rcpt-payer">' + esc(r.payer) + '</span>' : '') + '</div></div>'
+          + '<div class="rcpt-krw">≈ ₩' + krw(r.amount) + '</div>'
+          + '<div class="rcpt-meta"><span>' + ds + '</span>' + (r.payer ? '<span class="rcpt-payer">' + esc(r.payer) + '</span>' : '') + '</div></div>'
           + '<button class="rcpt-x" data-act="rcpt-del" data-id="' + r.id + '">×</button></div>';
       });
       html += '</div>';
     }
-    html += '<p class="foot">사진·금액·용도는 필수 · 사진은 이 기기에 저장됩니다</p></div>';
+    html += '<p class="foot">사진·금액·용도는 필수 · ' + (useServer ? "사진 포함 서버에 저장(여러 기기 공유)" : "이 기기에 저장됩니다") + '</p></div>';
     return html;
   }
 
-  /* ---- events ---- */
+  /* ---- 이벤트 ---- */
   document.getElementById("root").addEventListener("click", function (e) {
     var btn = e.target.closest("[data-act]"); if (!btn) return;
     var act = btn.getAttribute("data-act"), cp = btn.getAttribute("data-cp");
@@ -503,12 +443,45 @@ html, body { background: #e9e4d7; }
   });
   document.getElementById("root").addEventListener("change", function (e) {
     if (e.target && e.target.id === "rateInput") {
-      var v = parseFloat(e.target.value); if (v > 0) { rate = v; try { localStorage.setItem(RATE_KEY, String(v)); } catch (er) {} render(); }
+      var v = parseFloat(e.target.value);
+      if (v > 0) { rate = v; try { localStorage.setItem(RATE_KEY, String(v)); } catch (er) {} if (data) { data.rate = v; saveRollcall(); } render(); }
     }
   });
 
+  /* ---- 저장소 초기화 ---- */
+  function initLocal() {
+    useServer = false;
+    openDB(function () { idbAll(function (list) { receipts = list || []; receiptsLoaded = true; render(); }); });
+  }
+  function initStorage() {
+    var c = FIREBASE_CONFIG;
+    var ok = c && c.apiKey && c.projectId && c.apiKey.indexOf("여기에") === -1 && c.projectId.indexOf("여기에") === -1;
+    if (!ok) { initLocal(); return; }
+    Promise.all([
+      import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js"),
+      import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js")
+    ]).then(function (mods) {
+      var appMod = mods[0], fs = mods[1];
+      var app = appMod.initializeApp(c);
+      var db = fs.getFirestore(app);
+      try { fs.enableIndexedDbPersistence(db).catch(function () {}); } catch (e) {}
+      fb.fs = fs; fb.db = db; fb.rollcallRef = fs.doc(db, "trip", "rollcall");
+      useServer = true;
+      var seeded = false;
+      fs.onSnapshot(fb.rollcallRef, function (snap) {
+        if (snap.exists()) { var d = snap.data(); if (d && d.checkpoints) { data = d; if (d.rate) rate = d.rate; render(); } }
+        else if (!seeded) { seeded = true; data.rate = rate; fs.setDoc(fb.rollcallRef, data); }
+      }, function (err) { console.error(err); });
+      fs.onSnapshot(fs.collection(db, "receipts"), function (snap) {
+        var arr = []; snap.forEach(function (x) { arr.push(x.data()); });
+        receipts = arr; receiptsLoaded = true; render();
+      }, function () { receiptsLoaded = true; render(); });
+      render();
+    }).catch(function (e) { console.error("Firebase 연결 실패 → 로컬 저장으로 동작합니다.", e); initLocal(); });
+  }
+
   render();
-  openDB(function () { idbAll(function (list) { receipts = list || []; receiptsLoaded = true; if (ui.mode === "receipts") render(); }); });
+  initStorage();
 })();
 </script>
 </body>
