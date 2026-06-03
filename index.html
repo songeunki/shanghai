@@ -133,6 +133,8 @@ html, body { background: #e9e4d7; }
 .rcpt-payer { background:#f0ece0; color:#5e5a4d; padding:2px 7px; border-radius:6px; font-weight:600; }
 .rcpt-card { background:#e6efe9; color:#13403a; padding:2px 7px; border-radius:6px; font-weight:600; }
 .rcpt-x { background:none; border:none; color:#c4bdab; font-size:20px; cursor:pointer; padding:2px 4px; line-height:1; flex-shrink:0; }
+.rcpt-acts { display:flex; flex-direction:column; align-items:flex-end; gap:6px; flex-shrink:0; }
+.rcpt-edit { background:none; border:1px solid #e3ded0; color:#5e5a4d; font-size:11.5px; font-weight:600; padding:4px 9px; border-radius:7px; font-family:inherit; cursor:pointer; }
 .rcpt-empty { text-align:center; color:#a59f8d; font-size:13.5px; padding:40px 20px; }
 
 .modal { position:fixed; inset:0; background:rgba(8,20,18,.92); display:flex; align-items:center; justify-content:center; z-index:50; padding:20px; }
@@ -225,7 +227,7 @@ html, body { background: #e9e4d7; }
   function cardLabel(id) { var c = CARDS.filter(function (x) { return x.id === id; })[0]; if (!c) return id || ""; return c.last4 ? c.name + " ••" + c.last4 : c.name; }
 
   var data, saveFlash = false, saveTimer = null;
-  var ui = { mode: "roster", activeDay: "wed", openCp: null, adding: false, rcptAdding: false, modalImg: null };
+  var ui = { mode: "roster", activeDay: "wed", openCp: null, adding: false, rcptAdding: false, editingId: null, modalImg: null };
   var receipts = [], receiptsLoaded = false, tempImg = null;
   var rate = parseFloat(localStorage.getItem(RATE_KEY)) || 190;
 
@@ -302,13 +304,17 @@ html, body { background: #e9e4d7; }
     if (!tempImg) { errEl.textContent = "영수증 사진을 추가해 주세요."; return; }
     if (!(amount > 0)) { errEl.textContent = "금액(위안)을 입력해 주세요."; return; }
     if (!purpose) { errEl.textContent = "용도를 입력해 주세요."; return; }
-    var obj = { id: "r" + Date.now() + Math.floor(Math.random() * 1000), img: tempImg, amount: amount, purpose: purpose, payer: payer || "", card: card || "", ts: Date.now() };
-    if (useServer) {
-      try { fb.fs.setDoc(fb.fs.doc(fb.db, "receipts", obj.id), obj); } catch (e) {}
-      receipts.push(obj); tempImg = null; ui.rcptAdding = false; render();
-    } else {
-      idbPut(obj, function () { receipts.push(obj); tempImg = null; ui.rcptAdding = false; render(); });
-    }
+    var editing = ui.editingId ? receipts.filter(function (r) { return r.id === ui.editingId; })[0] : null;
+    var obj = {
+      id: editing ? editing.id : ("r" + Date.now() + Math.floor(Math.random() * 1000)),
+      img: tempImg, amount: amount, purpose: purpose, payer: payer || "", card: card || "",
+      ts: editing ? editing.ts : Date.now()
+    };
+    receipts = receipts.filter(function (r) { return r.id !== obj.id; });
+    receipts.push(obj);
+    tempImg = null; ui.rcptAdding = false; ui.editingId = null;
+    if (useServer) { try { fb.fs.setDoc(fb.fs.doc(fb.db, "receipts", obj.id), obj); } catch (e) {} render(); }
+    else { idbPut(obj, function () { render(); }); }
   }
   function deleteReceipt(id) {
     if (useServer) {
@@ -344,7 +350,7 @@ html, body { background: #e9e4d7; }
       var inp = document.getElementById("addInput");
       if (inp) { inp.focus(); inp.addEventListener("keydown", function (e) { if (e.key === "Enter") addCp(inp.value); }); }
     }
-    if (ui.mode === "receipts" && ui.rcptAdding) {
+    if (ui.mode === "receipts" && (ui.rcptAdding || ui.editingId)) {
       var prev = document.getElementById("photoPick");
       var galEl = document.getElementById("rcptFile"), camEl = document.getElementById("rcptCam");
       var galBtn = document.getElementById("btnGal"), camBtn = document.getElementById("btnCam");
@@ -410,23 +416,24 @@ html, body { background: #e9e4d7; }
       + '<div class="rcpt-total-krw">≈ ₩' + krw(total) + '</div>'
       + (cardSum ? '<div class="rcpt-cardsum">' + esc(cardSum) + '</div>' : '')
       + '<div class="rcpt-total-sub"><span>' + receipts.length + '건</span><span>환율 ₩<input class="rate-input" id="rateInput" type="number" inputmode="decimal" value="' + rate + '" />/¥</span></div></div>';
-    if (ui.rcptAdding) {
-      html += '<div class="rform"><h3>영수증 추가</h3>'
+    var ed = ui.editingId ? receipts.filter(function (r) { return r.id === ui.editingId; })[0] : null;
+    if (ui.rcptAdding || ed) {
+      html += '<div class="rform"><h3>' + (ed ? '영수증 수정' : '영수증 추가') + '</h3>'
         + '<div class="photo-pick" id="photoPick">' + (tempImg ? '<img src="' + tempImg + '" alt="미리보기" />' : '<span class="ph-ico">📷</span><span class="ph-txt">아래 버튼으로 사진 추가</span>') + '</div>'
         + '<div class="photo-btns"><button type="button" class="photo-btn" id="btnCam">📷 사진 촬영</button><button type="button" class="photo-btn alt" id="btnGal">🖼 갤러리 선택</button></div>'
-        + '<div class="field"><label>금액 <span class="req">*</span> (위안 ¥)</label><div class="money-row"><span class="yuan">¥</span><input id="rAmount" type="number" inputmode="decimal" placeholder="0" /></div></div>'
-        + '<div class="field"><label>용도 <span class="req">*</span></label><input class="f-input" id="rPurpose" type="text" placeholder="예: 단체 석식, 택시, 기념품" /></div>'
-        + '<div class="field"><label>결제자 (선택)</label><select class="f-select" id="rPayer"><option value="">선택 안 함</option>'
-        + ALL_MEMBERS.map(function (m) { return '<option value="' + esc(m) + '">' + esc(m) + '</option>'; }).join("") + '</select></div>'
+        + '<div class="field"><label>금액 <span class="req">*</span> (위안 ¥)</label><div class="money-row"><span class="yuan">¥</span><input id="rAmount" type="number" inputmode="decimal" placeholder="0" value="' + (ed ? ed.amount : '') + '" /></div></div>'
+        + '<div class="field"><label>용도 <span class="req">*</span></label><input class="f-input" id="rPurpose" type="text" placeholder="예: 단체 석식, 택시, 기념품" value="' + (ed ? esc(ed.purpose) : '') + '" /></div>'
+        + '<div class="field"><label>결제자 (선택)</label><select class="f-select" id="rPayer"><option value=""' + (ed && ed.payer ? '' : ' selected') + '>선택 안 함</option>'
+        + ALL_MEMBERS.map(function (m) { return '<option value="' + esc(m) + '"' + (ed && ed.payer === m ? ' selected' : '') + '>' + esc(m) + '</option>'; }).join("") + '</select></div>'
         + '<div class="field"><label>결제 카드</label><select class="f-select" id="rCard">'
-        + CARDS.map(function (c) { return '<option value="' + c.id + '">' + esc(cardLabel(c.id)) + '</option>'; }).join("") + '</select></div>'
+        + CARDS.map(function (c) { return '<option value="' + c.id + '"' + (ed && ed.card === c.id ? ' selected' : '') + '>' + esc(cardLabel(c.id)) + '</option>'; }).join("") + '</select></div>'
         + '<div class="rform-err" id="rErr"></div>'
-        + '<div class="rform-btns"><button class="act" data-act="rcpt-submit">저장</button><button class="act act-ghost" data-act="rcpt-cancel">취소</button></div></div>';
+        + '<div class="rform-btns"><button class="act" data-act="rcpt-submit">' + (ed ? '수정 저장' : '저장') + '</button><button class="act act-ghost" data-act="rcpt-cancel">취소</button></div></div>';
     } else {
       html += '<button class="rcpt-add" data-act="rcpt-add">+ 영수증 추가</button>';
     }
     if (!receiptsLoaded) html += '<div class="rcpt-empty">불러오는 중…</div>';
-    else if (receipts.length === 0 && !ui.rcptAdding) html += '<div class="rcpt-empty">아직 등록된 영수증이 없어요.<br/>위 버튼으로 사진·금액·용도를 등록하세요.</div>';
+    else if (receipts.length === 0 && !ui.rcptAdding && !ui.editingId) html += '<div class="rcpt-empty">아직 등록된 영수증이 없어요.<br/>위 버튼으로 사진·금액·용도를 등록하세요.</div>';
     else {
       var sorted = receipts.slice().sort(function (a, b) { return b.ts - a.ts; });
       html += '<div class="rcpt-list">';
@@ -438,7 +445,7 @@ html, body { background: #e9e4d7; }
           + '<div class="rcpt-amt"><small>¥</small>' + fmt(r.amount) + '</div>'
           + '<div class="rcpt-krw">≈ ₩' + krw(r.amount) + '</div>'
           + '<div class="rcpt-meta"><span>' + ds + '</span>' + (r.payer ? '<span class="rcpt-payer">' + esc(r.payer) + '</span>' : '') + (r.card ? '<span class="rcpt-card">' + esc(cardLabel(r.card)) + '</span>' : '') + '</div></div>'
-          + '<button class="rcpt-x" data-act="rcpt-del" data-id="' + r.id + '">×</button></div>';
+          + '<div class="rcpt-acts"><button class="rcpt-edit" data-act="edit" data-id="' + r.id + '">수정</button><button class="rcpt-x" data-act="rcpt-del" data-id="' + r.id + '">×</button></div></div>';
       });
       html += '</div>';
     }
@@ -461,8 +468,9 @@ html, body { background: #e9e4d7; }
     else if (act === "add-open") { ui.adding = true; render(); }
     else if (act === "add-cancel") { ui.adding = false; render(); }
     else if (act === "add-submit") { var i = document.getElementById("addInput"); addCp(i ? i.value : ""); }
-    else if (act === "rcpt-add") { tempImg = null; ui.rcptAdding = true; render(); }
-    else if (act === "rcpt-cancel") { tempImg = null; ui.rcptAdding = false; render(); }
+    else if (act === "rcpt-add") { tempImg = null; ui.editingId = null; ui.rcptAdding = true; render(); }
+    else if (act === "edit") { var eid = btn.getAttribute("data-id"); var er = receipts.filter(function (x) { return x.id === eid; })[0]; if (er) { ui.editingId = eid; ui.rcptAdding = false; tempImg = er.img; render(); } }
+    else if (act === "rcpt-cancel") { tempImg = null; ui.rcptAdding = false; ui.editingId = null; render(); }
     else if (act === "rcpt-submit") { submitReceipt(); }
     else if (act === "rcpt-del") { deleteReceipt(btn.getAttribute("data-id")); }
     else if (act === "view") { var id = btn.getAttribute("data-img"); var r = receipts.filter(function (x) { return x.id === id; })[0]; if (r) { ui.modalImg = r.img; render(); } }
