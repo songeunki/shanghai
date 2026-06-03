@@ -105,6 +105,9 @@ html, body { background: #e9e4d7; }
 .photo-pick img { width:100%; max-height:280px; object-fit:contain; display:block; }
 .photo-pick .ph-ico { font-size:30px; }
 .photo-pick .ph-txt { font-size:13px; }
+.photo-btns { display:flex; gap:8px; margin-top:9px; }
+.photo-btn { flex:1; background:#0e302b; border:none; color:#fff; border-radius:10px; padding:12px; font-size:13.5px; font-weight:600; font-family:inherit; cursor:pointer; }
+.photo-btn.alt { background:#f0ece0; color:#3a4742; }
 .field { margin-top:11px; }
 .field label { display:block; font-size:12.5px; color:#8a8678; margin-bottom:5px; font-weight:600; }
 .req { color:#c25b4e; }
@@ -143,6 +146,7 @@ html, body { background: #e9e4d7; }
 <body>
 <div id="root"><div class="screen"><div class="loading">불러오는 중…</div></div></div>
 <input type="file" id="rcptFile" accept="image/*" style="display:none" />
+<input type="file" id="rcptCam" accept="image/*" capture="environment" style="display:none" />
 
 <script>
 (function () {
@@ -331,11 +335,15 @@ html, body { background: #e9e4d7; }
       if (inp) { inp.focus(); inp.addEventListener("keydown", function (e) { if (e.key === "Enter") addCp(inp.value); }); }
     }
     if (ui.mode === "receipts" && ui.rcptAdding) {
-      var prev = document.getElementById("photoPick"), fileEl = document.getElementById("rcptFile");
-      if (prev && fileEl) {
-        prev.onclick = function () { fileEl.value = ""; fileEl.click(); };
-        fileEl.onchange = function () { var f = fileEl.files && fileEl.files[0]; if (!f) return; compressImage(f, function (u) { tempImg = u; prev.innerHTML = '<img src="' + u + '" alt="미리보기" />'; }); };
-      }
+      var prev = document.getElementById("photoPick");
+      var galEl = document.getElementById("rcptFile"), camEl = document.getElementById("rcptCam");
+      var galBtn = document.getElementById("btnGal"), camBtn = document.getElementById("btnCam");
+      function onPick(el) { return function () { var f = el.files && el.files[0]; if (!f) return; compressImage(f, function (u) { tempImg = u; if (prev) prev.innerHTML = '<img src="' + u + '" alt="미리보기" />'; }); }; }
+      if (galEl) galEl.onchange = onPick(galEl);
+      if (camEl) camEl.onchange = onPick(camEl);
+      if (galBtn && galEl) galBtn.onclick = function () { galEl.value = ""; galEl.click(); };
+      if (camBtn && camEl) camBtn.onclick = function () { camEl.value = ""; camEl.click(); };
+      if (prev && galEl) prev.onclick = function () { galEl.value = ""; galEl.click(); };
     }
   }
 
@@ -388,7 +396,8 @@ html, body { background: #e9e4d7; }
       + '<div class="rcpt-total-sub"><span>' + receipts.length + '건</span><span>환율 ₩<input class="rate-input" id="rateInput" type="number" inputmode="decimal" value="' + rate + '" />/¥</span></div></div>';
     if (ui.rcptAdding) {
       html += '<div class="rform"><h3>영수증 추가</h3>'
-        + '<div class="photo-pick" id="photoPick">' + (tempImg ? '<img src="' + tempImg + '" alt="미리보기" />' : '<span class="ph-ico">📷</span><span class="ph-txt">사진 촬영 / 갤러리 선택</span>') + '</div>'
+        + '<div class="photo-pick" id="photoPick">' + (tempImg ? '<img src="' + tempImg + '" alt="미리보기" />' : '<span class="ph-ico">📷</span><span class="ph-txt">아래 버튼으로 사진 추가</span>') + '</div>'
+        + '<div class="photo-btns"><button type="button" class="photo-btn" id="btnCam">📷 사진 촬영</button><button type="button" class="photo-btn alt" id="btnGal">🖼 갤러리 선택</button></div>'
         + '<div class="field"><label>금액 <span class="req">*</span> (위안 ¥)</label><div class="money-row"><span class="yuan">¥</span><input id="rAmount" type="number" inputmode="decimal" placeholder="0" /></div></div>'
         + '<div class="field"><label>용도 <span class="req">*</span></label><input class="f-input" id="rPurpose" type="text" placeholder="예: 단체 석식, 택시, 기념품" /></div>'
         + '<div class="field"><label>결제자 (선택)</label><select class="f-select" id="rPayer"><option value="">선택 안 함</option>'
