@@ -73,7 +73,7 @@ html, body { background: #e9e4d7; }
 
 .rooms { display: flex; flex-direction: column; gap: 7px; }
 .room { display: flex; align-items: center; gap: 10px; background: #faf8f1; border-radius: 11px; padding: 7px 9px; }
-.room-no { font-size: 11.5px; font-weight: 700; color: #8a8678; background: #ece7da; border-radius: 7px; padding: 4px 7px; flex-shrink: 0; min-width: 36px; text-align: center; }
+.room-no { font-size: 12.5px; font-weight: 700; color: #0e302b; background: #ece7da; border-radius: 7px; padding: 4px 8px; flex-shrink: 0; min-width: 46px; text-align: center; }
 .chips { display: flex; gap: 6px; flex: 1; }
 .chip { flex: 1; display: flex; align-items: center; gap: 6px; background: #fff; border: 1.5px solid #e3ded0; border-radius: 9px; padding: 8px 9px; font-size: 13.5px; font-family: inherit; color: #5e5a4d; cursor: pointer; transition: all .15s; font-weight: 500; text-align: left; }
 .chip-on { background: #eef7f0; border-color: #2f8f5b; color: #1d2b27; }
@@ -168,15 +168,15 @@ html, body { background: #e9e4d7; }
   /* ▲▲▲  설정 끝  ▲▲▲ */
 
   var ROOMS = [
-    { room: 1, members: ["황관복 전무", "오성식 부장"] },
-    { room: 2, members: ["배현지 선임", "황정연 선임"] },
-    { room: 3, members: ["윤득호 부장", "정병현 부장"] },
-    { room: 4, members: ["김성우 부장", "이종환 선임"] },
-    { room: 5, members: ["정민영 이사", "박지훈 부장"] },
-    { room: 6, members: ["송은기 이사", "김상우 수석"] },
-    { room: 7, members: ["황유식 실장", "곽주성 책임"] },
-    { room: 8, members: ["임범동 부장", "방관영 책임"] },
-    { room: 9, members: ["김현우 부장", "김도형 책임"] }
+    { room: "1128", members: ["황관복 전무", "오성식 부장"] },
+    { room: "1228", members: ["배현지 선임", "황정연 선임"] },
+    { room: "812", members: ["윤득호 부장", "정병현 부장"] },
+    { room: "828", members: ["김성우 부장", "이종환 선임"] },
+    { room: "1001", members: ["정민영 이사", "박지훈 부장"] },
+    { room: "1016", members: ["송은기 이사", "김상우 수석"] },
+    { room: "1028", members: ["황유식 실장", "곽주성 책임"] },
+    { room: "1212", members: ["임범동 부장", "방관영 책임"] },
+    { room: "1229", members: ["김현우 부장", "김도형 책임"] }
   ];
   var ALL_MEMBERS = [];
   ROOMS.forEach(function (r) { r.members.forEach(function (m) { ALL_MEMBERS.push(m); }); });
@@ -370,7 +370,7 @@ html, body { background: #e9e4d7; }
           + '<button class="act act-ghost" data-act="clear" data-cp="' + cp.id + '">초기화</button>'
           + '<button class="act act-del" data-act="remove" data-cp="' + cp.id + '">삭제</button></div></div><div class="rooms">';
         ROOMS.forEach(function (r) {
-          html += '<div class="room"><span class="room-no">방' + r.room + '</span><div class="chips">';
+          html += '<div class="room"><span class="room-no">' + r.room + '</span><div class="chips">';
           r.members.forEach(function (name) {
             var on2 = isPresent(ui.activeDay, cp.id, name);
             html += '<button class="chip' + (on2 ? " chip-on" : "") + '" data-act="toggle" data-cp="' + cp.id + '" data-name="' + esc(name) + '"><span class="chip-box">' + (on2 ? "✓" : "") + '</span>' + esc(name) + '</button>';
