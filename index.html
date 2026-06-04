@@ -95,6 +95,8 @@ html, body { background: #e9e4d7; }
 .rcpt-total-amt small { font-size:18px; color:#c9a24b; margin-right:4px; }
 .rcpt-total-krw { font-size:15px; color:#e7e0cf; font-weight:600; margin-bottom:6px; }
 .rcpt-cardsum { font-size:12.5px; color:#c9a24b; font-weight:600; margin-bottom:8px; }
+.krw-note { font-size:11px; color:#9fc4b6; font-weight:400; }
+.sheet-rate { font-size:12.5px; color:#8a8678; font-weight:600; margin-top:5px; }
 .rcpt-total-sub { font-size:12.5px; color:#9fc4b6; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .rate-input { width:62px; background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.18); color:#f4f1e9; border-radius:7px; padding:3px 6px; font-size:12px; font-family:inherit; outline:none; }
 
@@ -257,6 +259,26 @@ html, body { background: #e9e4d7; }
   function krw(cny) { return Math.round(Number(cny) * rate).toLocaleString("ko-KR"); }
   function cardLabel(id) { var c = CARDS.filter(function (x) { return x.id === id; })[0]; if (!c) return id || ""; return c.last4 ? c.name + " ••" + c.last4 : c.name; }
   function getImgs(r) { if (!r) return []; if (r.imgs && r.imgs.length) return r.imgs; if (r.img) return [r.img]; return []; }
+  function ymd(ts) { var d = new Date(ts); return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); }
+  function rcptRate(r) { return (r && r.rate && r.rate > 0) ? r.rate : rate; }
+  function rateStr(rt) { return (Math.round(rt * 100) / 100).toLocaleString("ko-KR"); }
+  function fetchRate(dateStr) {
+    var url = "https://api.frankfurter.app/" + (dateStr || "latest") + "?from=CNY&to=KRW";
+    return fetch(url).then(function (r) { return r.json(); })
+      .then(function (j) { return (j && j.rates && j.rates.KRW) ? j.rates.KRW : null; })
+      .catch(function () { return null; });
+  }
+  function payerColor(name) {
+    if (!name) return null;
+    var h = 0; for (var i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) % 360;
+    return { bg: "hsl(" + h + ",55%,92%)", fg: "hsl(" + h + ",60%,30%)", bar: "hsl(" + h + ",55%,48%)" };
+  }
+  var CARD_COLORS = { ibk: { bg: "#e3edfb", fg: "#1f5fb0" }, shinhan: { bg: "#fde8e6", fg: "#c0392b" }, cash: { bg: "#ece9e2", fg: "#6b6557" } };
+  function cardColor(id) { return CARD_COLORS[id] || { bg: "#e6efe9", fg: "#13403a" }; }
+  function prefillRate() {
+    var el = document.getElementById("rRate"); if (!el || el.value) return;
+    fetchRate("latest").then(function (rt) { var e2 = document.getElementById("rRate"); if (rt && e2 && !e2.value) e2.value = Math.round(rt * 100) / 100; });
+  }
 
   var data, saveFlash = false, saveTimer = null;
   var ui = { mode: "roster", activeDay: "wed", openCp: null, adding: false, rcptAdding: false, editingId: null, detailId: null, modalImgs: null };
@@ -396,20 +418,30 @@ html, body { background: #e9e4d7; }
     var amount = parseFloat(amtEl ? amtEl.value : ""), purpose = (purpEl ? purpEl.value : "").trim(), payer = payEl ? payEl.value : "";
     var cardEl = document.getElementById("rCard"); var card = cardEl ? cardEl.value : "";
     var detEl = document.getElementById("rDetail"); var detail = detEl ? detEl.value.trim() : "";
+    var rRateEl = document.getElementById("rRate"); var manualRate = rRateEl ? parseFloat(rRateEl.value) : NaN;
     if (!tempImgs.length) { errEl.textContent = "영수증 사진을 1장 이상 추가해 주세요."; return; }
     if (!(amount > 0)) { errEl.textContent = "금액(위안)을 입력해 주세요."; return; }
     if (!purpose) { errEl.textContent = "용도를 입력해 주세요."; return; }
     var editing = ui.editingId ? receipts.filter(function (r) { return r.id === ui.editingId; })[0] : null;
-    var obj = {
-      id: editing ? editing.id : ("r" + Date.now() + Math.floor(Math.random() * 1000)),
-      imgs: tempImgs.slice(), amount: amount, purpose: purpose, detail: detail || "", payer: payer || "", card: card || "",
-      ts: editing ? editing.ts : Date.now()
-    };
-    receipts = receipts.filter(function (r) { return r.id !== obj.id; });
-    receipts.push(obj);
-    tempImgs = []; ui.rcptAdding = false; ui.editingId = null;
-    if (useServer) { try { fb.fs.setDoc(fb.fs.doc(fb.db, "receipts", obj.id), obj); } catch (e) {} render(); }
-    else { idbPut(obj, function () { render(); }); }
+    var ts = editing ? editing.ts : Date.now();
+    var imgsSnap = tempImgs.slice();
+    function finish(rt, rdate) {
+      var obj = {
+        id: editing ? editing.id : ("r" + Date.now() + Math.floor(Math.random() * 1000)),
+        imgs: imgsSnap, amount: amount, purpose: purpose, detail: detail || "", payer: payer || "", card: card || "",
+        rate: (rt && rt > 0) ? rt : null, rateDate: rdate || "", ts: ts
+      };
+      receipts = receipts.filter(function (r) { return r.id !== obj.id; });
+      receipts.push(obj);
+      tempImgs = []; ui.rcptAdding = false; ui.editingId = null;
+      if (useServer) { try { fb.fs.setDoc(fb.fs.doc(fb.db, "receipts", obj.id), obj); } catch (e) {} render(); }
+      else { idbPut(obj, function () { render(); }); }
+    }
+    if (manualRate > 0) { finish(manualRate, ""); }
+    else {
+      errEl.textContent = "결제일 환율 조회 중…";
+      fetchRate(ymd(ts)).then(function (rt) { finish(rt || rate, rt ? ymd(ts) : ""); });
+    }
   }
   function deleteReceipt(id) {
     if (useServer) {
@@ -500,6 +532,7 @@ html, body { background: #e9e4d7; }
   function renderReceipts() {
     var html = '<div class="rcpt-wrap">';
     var total = receipts.reduce(function (s, r) { return s + (Number(r.amount) || 0); }, 0);
+    var totalKrw = receipts.reduce(function (s, r) { return s + Math.round((Number(r.amount) || 0) * rcptRate(r)); }, 0);
     var byCard = CARDS.map(function (c) {
       var s = receipts.reduce(function (a, r) { return a + (r.card === c.id ? (Number(r.amount) || 0) : 0); }, 0);
       return { c: c, s: s };
@@ -507,9 +540,9 @@ html, body { background: #e9e4d7; }
     var cardSum = byCard.map(function (x) { return cardLabel(x.c.id) + " ¥" + fmt(x.s); }).join("  ·  ");
     html += '<div class="rcpt-total"><div class="rcpt-total-lb">총 지출 (위안화)</div>'
       + '<div class="rcpt-total-amt"><small>¥</small>' + fmt(total) + '</div>'
-      + '<div class="rcpt-total-krw">≈ ₩' + krw(total) + '</div>'
+      + '<div class="rcpt-total-krw">≈ ₩' + totalKrw.toLocaleString("ko-KR") + ' <span class="krw-note">(건별 환율 합산)</span></div>'
       + (cardSum ? '<div class="rcpt-cardsum">' + esc(cardSum) + '</div>' : '')
-      + '<div class="rcpt-total-sub"><span>' + receipts.length + '건</span><span>환율 ₩<input class="rate-input" id="rateInput" type="number" inputmode="decimal" value="' + rate + '" />/¥</span></div></div>';
+      + '<div class="rcpt-total-sub"><span>' + receipts.length + '건</span><span>기본 환율 ₩<input class="rate-input" id="rateInput" type="number" inputmode="decimal" value="' + rate + '" />/¥</span></div></div>';
     var ed = ui.editingId ? receipts.filter(function (r) { return r.id === ui.editingId; })[0] : null;
     if (ui.rcptAdding || ed) {
       html += '<div class="rform"><h3>' + (ed ? '영수증 수정' : '영수증 추가') + '</h3>'
@@ -523,6 +556,7 @@ html, body { background: #e9e4d7; }
         + PAYER_LIST.map(function (m) { return '<option value="' + esc(m) + '"' + (ed && ed.payer === m ? ' selected' : '') + '>' + esc(m) + '</option>'; }).join("") + '</select></div>'
         + '<div class="field"><label>결제 카드</label><select class="f-select" id="rCard">'
         + CARDS.map(function (c) { return '<option value="' + c.id + '"' + (ed && ed.card === c.id ? ' selected' : '') + '>' + esc(cardLabel(c.id)) + '</option>'; }).join("") + '</select></div>'
+        + '<div class="field"><label>적용 환율 (₩/¥)</label><input class="f-input" id="rRate" type="number" inputmode="decimal" placeholder="비우면 결제일 환율 자동 조회" value="' + (ed && ed.rate ? ed.rate : '') + '" /></div>'
         + '<div class="rform-err" id="rErr"></div>'
         + '<div class="rform-btns"><button class="act" data-act="rcpt-submit">' + (ed ? '수정 저장' : '저장') + '</button><button class="act act-ghost" data-act="rcpt-cancel">취소</button></div></div>';
     } else {
@@ -537,12 +571,14 @@ html, body { background: #e9e4d7; }
         var d = new Date(r.ts);
         var ds = d.getFullYear() + "." + ("0" + (d.getMonth() + 1)).slice(-2) + "." + ("0" + d.getDate()).slice(-2) + " " + ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2);
         var imgs = getImgs(r);
-        html += '<div class="rcpt-item"><div class="rcpt-thumbwrap" data-act="detail" data-id="' + r.id + '"><img class="rcpt-thumb" src="' + (imgs[0] || "") + '" alt="영수증" />' + (imgs.length > 1 ? '<span class="thumb-badge">+' + (imgs.length - 1) + '</span>' : '') + '</div>'
+        var rt = rcptRate(r);
+        var pc = payerColor(r.payer), cc = cardColor(r.card);
+        html += '<div class="rcpt-item"' + (pc ? ' style="border-left:5px solid ' + pc.bar + '"' : '') + '><div class="rcpt-thumbwrap" data-act="detail" data-id="' + r.id + '"><img class="rcpt-thumb" src="' + (imgs[0] || "") + '" alt="영수증" />' + (imgs.length > 1 ? '<span class="thumb-badge">+' + (imgs.length - 1) + '</span>' : '') + '</div>'
           + '<div class="rcpt-info" data-act="detail" data-id="' + r.id + '"><div class="rcpt-purpose">' + esc(r.purpose) + '</div>'
           + '<div class="rcpt-amt"><small>¥</small>' + fmt(r.amount) + '</div>'
-          + '<div class="rcpt-krw">≈ ₩' + krw(r.amount) + '</div>'
+          + '<div class="rcpt-krw">≈ ₩' + Math.round(r.amount * rt).toLocaleString("ko-KR") + ' · 환율 ₩' + rateStr(rt) + '/¥</div>'
           + (r.detail ? '<div class="rcpt-detail">' + esc(r.detail) + '</div>' : '')
-          + '<div class="rcpt-meta"><span>' + ds + '</span>' + (r.payer ? '<span class="rcpt-payer">' + esc(r.payer) + '</span>' : '') + (r.card ? '<span class="rcpt-card">' + esc(cardLabel(r.card)) + '</span>' : '') + '</div></div>'
+          + '<div class="rcpt-meta"><span>' + ds + '</span>' + (r.payer ? '<span class="rcpt-payer" style="background:' + pc.bg + ';color:' + pc.fg + '">' + esc(r.payer) + '</span>' : '') + (r.card ? '<span class="rcpt-card" style="background:' + cc.bg + ';color:' + cc.fg + '">' + esc(cardLabel(r.card)) + '</span>' : '') + '</div></div>'
           + '<div class="rcpt-acts"><button class="rcpt-edit" data-act="edit" data-id="' + r.id + '">수정</button><button class="rcpt-x" data-act="rcpt-del" data-id="' + r.id + '">×</button></div></div>';
       });
       html += '</div>';
@@ -556,12 +592,15 @@ html, body { background: #e9e4d7; }
     var r = receipts.filter(function (x) { return x.id === ui.detailId; })[0];
     if (!r) return "";
     var imgs = getImgs(r);
+    var rt = rcptRate(r);
+    var pc = payerColor(r.payer), cc = cardColor(r.card);
     var d = new Date(r.ts);
     var ds = d.getFullYear() + "." + ("0" + (d.getMonth() + 1)).slice(-2) + "." + ("0" + d.getDate()).slice(-2) + " " + ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2);
     var h = '<div class="sheet"><div class="sheet-bar"><button class="sheet-close" data-act="detail-close">‹ 닫기</button></div><div class="sheet-body">';
     h += '<div class="sheet-purpose">' + esc(r.purpose) + '</div>';
-    h += '<div class="sheet-amt"><small>¥</small>' + fmt(r.amount) + ' <span class="sheet-krw">≈ ₩' + krw(r.amount) + '</span></div>';
-    h += '<div class="sheet-tags">' + (r.card ? '<span class="rcpt-card">' + esc(cardLabel(r.card)) + '</span>' : '') + (r.payer ? '<span class="rcpt-payer">' + esc(r.payer) + '</span>' : '') + '<span class="sheet-date">' + ds + '</span></div>';
+    h += '<div class="sheet-amt"><small>¥</small>' + fmt(r.amount) + ' <span class="sheet-krw">≈ ₩' + Math.round(r.amount * rt).toLocaleString("ko-KR") + '</span></div>';
+    h += '<div class="sheet-rate">적용 환율 ₩' + rateStr(rt) + '/¥' + (r.rateDate ? ' · ' + r.rateDate + ' 기준' : '') + '</div>';
+    h += '<div class="sheet-tags">' + (r.card ? '<span class="rcpt-card" style="background:' + cc.bg + ';color:' + cc.fg + '">' + esc(cardLabel(r.card)) + '</span>' : '') + (r.payer ? '<span class="rcpt-payer" style="background:' + pc.bg + ';color:' + pc.fg + '">' + esc(r.payer) + '</span>' : '') + '<span class="sheet-date">' + ds + '</span></div>';
     if (r.detail) h += '<div class="sheet-label">세부 내역</div><div class="sheet-detail">' + esc(r.detail) + '</div>';
     h += '<div class="sheet-label">사진 ' + imgs.length + '장</div><div class="sheet-photos">';
     for (var i = 0; i < imgs.length; i++) h += '<img src="' + imgs[i] + '" data-act="view" data-img="' + r.id + '" alt="영수증 ' + (i + 1) + '" />';
@@ -586,7 +625,7 @@ html, body { background: #e9e4d7; }
     else if (act === "add-open") { ui.adding = true; render(); }
     else if (act === "add-cancel") { ui.adding = false; render(); }
     else if (act === "add-submit") { var i = document.getElementById("addInput"); addCp(i ? i.value : ""); }
-    else if (act === "rcpt-add") { tempImgs = []; ui.editingId = null; ui.detailId = null; ui.rcptAdding = true; render(); }
+    else if (act === "rcpt-add") { tempImgs = []; ui.editingId = null; ui.detailId = null; ui.rcptAdding = true; render(); prefillRate(); }
     else if (act === "edit") { var eid = btn.getAttribute("data-id"); var er = receipts.filter(function (x) { return x.id === eid; })[0]; if (er) { ui.editingId = eid; ui.detailId = null; ui.rcptAdding = false; tempImgs = getImgs(er).slice(); render(); } }
     else if (act === "rcpt-cancel") { tempImgs = []; ui.rcptAdding = false; ui.editingId = null; render(); }
     else if (act === "rcpt-submit") { submitReceipt(); }
