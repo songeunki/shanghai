@@ -119,6 +119,7 @@ html, body { background: #e9e4d7; }
 .field { margin-top:11px; }
 .field label { display:block; font-size:12.5px; color:#8a8678; margin-bottom:5px; font-weight:600; }
 .req { color:#c25b4e; }
+.dim { color:#a59f8d; font-weight:400; font-size:11px; }
 .money-row { display:flex; align-items:center; border:1px solid #e3ded0; border-radius:10px; overflow:hidden; }
 .money-row .yuan { padding:0 12px; color:#0e302b; font-weight:700; font-size:16px; background:#f4f1e9; align-self:stretch; display:flex; align-items:center; }
 .money-row input { flex:1; border:none; padding:11px 12px; font-size:15px; font-family:inherit; outline:none; }
@@ -260,6 +261,8 @@ html, body { background: #e9e4d7; }
   function cardLabel(id) { var c = CARDS.filter(function (x) { return x.id === id; })[0]; if (!c) return id || ""; return c.last4 ? c.name + " ••" + c.last4 : c.name; }
   function getImgs(r) { if (!r) return []; if (r.imgs && r.imgs.length) return r.imgs; if (r.img) return [r.img]; return []; }
   function ymd(ts) { var d = new Date(ts); return d.getFullYear() + "-" + ("0" + (d.getMonth() + 1)).slice(-2) + "-" + ("0" + d.getDate()).slice(-2); }
+  function dtLocal(ms) { if (!ms) return ""; var d = new Date(ms), p = function (n) { return ("0" + n).slice(-2); }; return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) + "T" + p(d.getHours()) + ":" + p(d.getMinutes()); }
+  function paidOf(r) { return (r && r.paidAt) ? r.paidAt : (r ? r.ts : Date.now()); }
   function rcptRate(r) { return (r && r.rate && r.rate > 0) ? r.rate : rate; }
   function rateStr(rt) { return (Math.round(rt * 100) / 100).toLocaleString("ko-KR"); }
   function fetchRate(dateStr) {
@@ -407,8 +410,13 @@ html, body { background: #e9e4d7; }
         var amtEl = document.getElementById("rAmount"), purpEl = document.getElementById("rPurpose"), detEl = document.getElementById("rDetail");
         if (amtEl && d.amount > 0 && !(parseFloat(amtEl.value) > 0)) amtEl.value = d.amount;
         if (purpEl && d.merchant && !purpEl.value.trim()) purpEl.value = d.merchant;
-        if (detEl && d.items) detEl.value = (detEl.value ? detEl.value + "\n" : "") + d.items + (d.date ? "  (" + d.date + ")" : "");
-        if (st) { st.textContent = "✓ 자동 인식 완료 — 내용 확인 후 저장하세요."; st.className = "scan-status ok"; }
+        if (detEl && d.items) detEl.value = (detEl.value ? detEl.value + "\n" : "") + d.items;
+        var paidEl = document.getElementById("rPaidAt");
+        if (paidEl && !paidEl.value && d.date && /^\d{4}-\d{2}-\d{2}$/.test(d.date)) {
+          var tt = (d.time && /^\d{1,2}:\d{2}$/.test(d.time)) ? ("0" + d.time).slice(-5) : "12:00";
+          paidEl.value = d.date + "T" + tt;
+        }
+        if (st) { st.textContent = "✓ 자동 인식 완료 — 결제시간·금액 확인 후 저장하세요."; st.className = "scan-status ok"; }
         done && done();
       })
       .catch(function () { if (st) { st.textContent = "자동 인식 실패 — 직접 입력하세요."; st.className = "scan-status err"; } done && done(); });
@@ -423,13 +431,17 @@ html, body { background: #e9e4d7; }
     if (!(amount > 0)) { errEl.textContent = "금액(위안)을 입력해 주세요."; return; }
     if (!purpose) { errEl.textContent = "용도를 입력해 주세요."; return; }
     var editing = ui.editingId ? receipts.filter(function (r) { return r.id === ui.editingId; })[0] : null;
+    var paidEl = document.getElementById("rPaidAt");
+    var paidMs = (paidEl && paidEl.value) ? Date.parse(paidEl.value) : NaN;
     var ts = editing ? editing.ts : Date.now();
+    var paidAt = (paidMs && !isNaN(paidMs)) ? paidMs : (editing && editing.paidAt ? editing.paidAt : ts);
+    var basis = paidAt; // 환율은 결제 일시 기준
     var imgsSnap = tempImgs.slice();
     function finish(rt, rdate) {
       var obj = {
         id: editing ? editing.id : ("r" + Date.now() + Math.floor(Math.random() * 1000)),
         imgs: imgsSnap, amount: amount, purpose: purpose, detail: detail || "", payer: payer || "", card: card || "",
-        rate: (rt && rt > 0) ? rt : null, rateDate: rdate || "", ts: ts
+        rate: (rt && rt > 0) ? rt : null, rateDate: rdate || "", paidAt: paidAt, ts: ts
       };
       receipts = receipts.filter(function (r) { return r.id !== obj.id; });
       receipts.push(obj);
@@ -440,7 +452,7 @@ html, body { background: #e9e4d7; }
     if (manualRate > 0) { finish(manualRate, ""); }
     else {
       errEl.textContent = "결제일 환율 조회 중…";
-      fetchRate(ymd(ts)).then(function (rt) { finish(rt || rate, rt ? ymd(ts) : ""); });
+      fetchRate(ymd(basis)).then(function (rt) { finish(rt || rate, rt ? ymd(basis) : ""); });
     }
   }
   function deleteReceipt(id) {
@@ -551,6 +563,7 @@ html, body { background: #e9e4d7; }
         + '<div class="scan-status" id="scanStatus"></div>'
         + '<div class="field"><label>금액 <span class="req">*</span> (위안 ¥)</label><div class="money-row"><span class="yuan">¥</span><input id="rAmount" type="number" inputmode="decimal" placeholder="0" value="' + (ed ? ed.amount : '') + '" /></div></div>'
         + '<div class="field"><label>용도 <span class="req">*</span></label><input class="f-input" id="rPurpose" type="text" placeholder="예: 단체 석식, 택시, 기념품" value="' + (ed ? esc(ed.purpose) : '') + '" /></div>'
+        + '<div class="field"><label>결제 일시 <span class="dim">(스캔 시 자동 입력)</span></label><input class="f-input" id="rPaidAt" type="datetime-local" value="' + (ed ? dtLocal(paidOf(ed)) : '') + '" /></div>'
         + '<div class="field"><label>세부 내역</label><textarea class="f-input f-area" id="rDetail" rows="3" placeholder="영수증 항목·메모 (사진 스캔 시 자동 입력)">' + (ed ? esc(ed.detail || "") : "") + '</textarea></div>'
         + '<div class="field"><label>결제자 (선택)</label><select class="f-select" id="rPayer"><option value=""' + (ed && ed.payer ? '' : ' selected') + '>선택 안 함</option>'
         + PAYER_LIST.map(function (m) { return '<option value="' + esc(m) + '"' + (ed && ed.payer === m ? ' selected' : '') + '>' + esc(m) + '</option>'; }).join("") + '</select></div>'
@@ -565,10 +578,10 @@ html, body { background: #e9e4d7; }
     if (!receiptsLoaded) html += '<div class="rcpt-empty">불러오는 중…</div>';
     else if (receipts.length === 0 && !ui.rcptAdding && !ui.editingId) html += '<div class="rcpt-empty">아직 등록된 영수증이 없어요.<br/>위 버튼으로 사진·금액·용도를 등록하세요.</div>';
     else {
-      var sorted = receipts.slice().sort(function (a, b) { return b.ts - a.ts; });
+      var sorted = receipts.slice().sort(function (a, b) { return paidOf(b) - paidOf(a); });
       html += '<div class="rcpt-list">';
       sorted.forEach(function (r) {
-        var d = new Date(r.ts);
+        var d = new Date(paidOf(r));
         var ds = d.getFullYear() + "." + ("0" + (d.getMonth() + 1)).slice(-2) + "." + ("0" + d.getDate()).slice(-2) + " " + ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2);
         var imgs = getImgs(r);
         var rt = rcptRate(r);
@@ -594,7 +607,7 @@ html, body { background: #e9e4d7; }
     var imgs = getImgs(r);
     var rt = rcptRate(r);
     var pc = payerColor(r.payer), cc = cardColor(r.card);
-    var d = new Date(r.ts);
+    var d = new Date(paidOf(r));
     var ds = d.getFullYear() + "." + ("0" + (d.getMonth() + 1)).slice(-2) + "." + ("0" + d.getDate()).slice(-2) + " " + ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2);
     var h = '<div class="sheet"><div class="sheet-bar"><button class="sheet-close" data-act="detail-close">‹ 닫기</button></div><div class="sheet-body">';
     h += '<div class="sheet-purpose">' + esc(r.purpose) + '</div>';
