@@ -150,7 +150,23 @@ html, body { background: #e9e4d7; }
 .rcpt-edit { background:none; border:1px solid #e3ded0; color:#5e5a4d; font-size:11.5px; font-weight:600; padding:4px 9px; border-radius:7px; font-family:inherit; cursor:pointer; }
 .rcpt-empty { text-align:center; color:#a59f8d; font-size:13.5px; padding:40px 20px; }
 
-.modal { position:fixed; inset:0; background:rgba(8,20,18,.92); display:flex; align-items:center; justify-content:center; z-index:50; padding:20px; }
+.modal { position:fixed; inset:0; background:rgba(8,20,18,.92); display:flex; align-items:center; justify-content:center; z-index:60; padding:20px; }
+.sheet { position:fixed; inset:0; background:#f4f1e9; z-index:40; max-width:560px; margin:0 auto; display:flex; flex-direction:column; }
+.sheet-bar { padding:calc(10px + env(safe-area-inset-top)) 12px 8px; border-bottom:1px solid #e7e1d2; }
+.sheet-close { background:none; border:none; font-family:inherit; font-size:15px; font-weight:600; color:#0e302b; cursor:pointer; padding:6px 2px; }
+.sheet-body { overflow:auto; padding:16px 18px calc(28px + env(safe-area-inset-bottom)); -webkit-overflow-scrolling:touch; }
+.sheet-purpose { font-size:20px; font-weight:700; color:#1d2b27; word-break:break-word; }
+.sheet-amt { font-family:'Gowun Batang',serif; font-size:27px; font-weight:700; color:#13403a; margin-top:5px; }
+.sheet-amt small { color:#c9a24b; font-size:18px; margin-right:2px; }
+.sheet-krw { font-family:'IBM Plex Sans KR',sans-serif; font-size:14px; color:#a59f8d; font-weight:600; }
+.sheet-tags { display:flex; gap:7px; flex-wrap:wrap; align-items:center; margin-top:11px; }
+.sheet-date { font-size:12px; color:#a59f8d; }
+.sheet-label { font-size:12px; font-weight:700; color:#8a8678; margin:18px 0 7px; letter-spacing:.02em; }
+.sheet-detail { background:#fff; border:1px solid #e7e1d2; border-radius:12px; padding:12px 14px; font-size:14px; color:#3a4742; white-space:pre-wrap; line-height:1.55; word-break:break-word; }
+.sheet-photos { display:flex; flex-direction:column; gap:12px; }
+.sheet-photos img { width:100%; border-radius:12px; cursor:zoom-in; display:block; }
+.sheet-actions { display:flex; gap:8px; margin-top:22px; }
+.sheet-actions .act { flex:1; text-align:center; padding:13px; font-size:14px; }
 .modal img { max-width:100%; max-height:88vh; border-radius:8px; }
 .modal-scroll { max-height:90vh; overflow:auto; display:flex; flex-direction:column; gap:10px; -webkit-overflow-scrolling:touch; }
 .modal-close { position:fixed; top:calc(16px + env(safe-area-inset-top)); right:18px; color:#fff; font-size:30px; background:none; border:none; cursor:pointer; }
@@ -243,7 +259,7 @@ html, body { background: #e9e4d7; }
   function getImgs(r) { if (!r) return []; if (r.imgs && r.imgs.length) return r.imgs; if (r.img) return [r.img]; return []; }
 
   var data, saveFlash = false, saveTimer = null;
-  var ui = { mode: "roster", activeDay: "wed", openCp: null, adding: false, rcptAdding: false, editingId: null, modalImgs: null };
+  var ui = { mode: "roster", activeDay: "wed", openCp: null, adding: false, rcptAdding: false, editingId: null, detailId: null, modalImgs: null };
   var receipts = [], receiptsLoaded = false, tempImgs = [], scanning = false;
   var rate = parseFloat(localStorage.getItem(RATE_KEY)) || 190;
 
@@ -278,22 +294,43 @@ html, body { background: #e9e4d7; }
   function idbDel(id, cb) { try { var tx = DB.transaction("receipts", "readwrite"); tx.objectStore("receipts").delete(id); tx.oncomplete = function () { cb && cb(); }; } catch (e) { cb && cb(); } }
 
   /* ---- 저장(점호) ---- */
-  function saveRollcall() {
-    if (useServer) { try { fb.fs.setDoc(fb.rollcallRef, data); } catch (e) {} }
-    else { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch (e) {} }
+  function flashSaved() {
     saveFlash = true;
     if (saveTimer) clearTimeout(saveTimer);
     saveTimer = setTimeout(function () { saveFlash = false; var el = document.getElementById("saveDot"); if (el) el.style.display = "none"; }, 1200);
+  }
+  function saveLocal() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch (e) {} }
+  function serverUpdate(fields) {
+    if (!useServer) return;
+    fb.fs.updateDoc(fb.rollcallRef, fields).catch(function () {
+      // 문서가 없으면 기본 구조로 만든 뒤 재시도 (기존 값 보존)
+      var init = buildInitial(); init.rate = rate;
+      fb.fs.setDoc(fb.rollcallRef, init, { merge: true }).then(function () {
+        fb.fs.updateDoc(fb.rollcallRef, fields).catch(function () {});
+      }).catch(function () {});
+    });
+  }
+  function persistChecks(key, cur) {
+    if (useServer) { var o = {}; o["checks." + key] = cur; serverUpdate(o); } else saveLocal();
+    flashSaved();
+  }
+  function persistCheckpoints(dayKey, extra) {
+    if (useServer) { var o = {}; o["checkpoints." + dayKey] = data.checkpoints[dayKey]; if (extra) { for (var k in extra) o[k] = extra[k]; } serverUpdate(o); } else saveLocal();
+    flashSaved();
+  }
+  function persistRate(v) {
+    if (useServer) serverUpdate({ rate: v }); else saveLocal();
+    flashSaved();
   }
 
   function presentOf(dayKey, cpId) { var m = data.checks[cpKey(dayKey, cpId)] || {}; var n = 0; ALL_MEMBERS.forEach(function (name) { if (m[name]) n++; }); return n; }
   function isPresent(dayKey, cpId, name) { return !!(data.checks[cpKey(dayKey, cpId)] || {})[name]; }
   function dayProgress(dayKey) { var cps = data.checkpoints[dayKey] || []; if (!cps.length) return 0; var done = 0; cps.forEach(function (c) { if (presentOf(dayKey, c.id) === TOTAL) done++; }); return done / cps.length; }
-  function toggle(dayKey, cpId, name) { var key = cpKey(dayKey, cpId); var cur = data.checks[key] || {}; if (cur[name]) delete cur[name]; else cur[name] = true; data.checks[key] = cur; saveRollcall(); render(); }
-  function setAll(dayKey, cpId, val) { var key = cpKey(dayKey, cpId); var cur = {}; if (val) ALL_MEMBERS.forEach(function (n) { cur[n] = true; }); data.checks[key] = cur; saveRollcall(); render(); }
-  function moveCp(dayKey, cpId, dir) { var list = data.checkpoints[dayKey] || []; var i = -1; list.forEach(function (c, idx) { if (c.id === cpId) i = idx; }); var j = i + dir; if (i < 0 || j < 0 || j >= list.length) return; var t = list[i]; list[i] = list[j]; list[j] = t; saveRollcall(); render(); }
-  function removeCp(dayKey, cpId) { data.checkpoints[dayKey] = (data.checkpoints[dayKey] || []).filter(function (c) { return c.id !== cpId; }); delete data.checks[cpKey(dayKey, cpId)]; if (ui.openCp === cpId) ui.openCp = null; saveRollcall(); render(); }
-  function addCp(label) { label = (label || "").trim(); if (!label) return; var list = data.checkpoints[ui.activeDay] || []; list.push({ id: ui.activeDay + "_c" + Date.now(), label: label }); data.checkpoints[ui.activeDay] = list; ui.adding = false; saveRollcall(); render(); }
+  function toggle(dayKey, cpId, name) { var key = cpKey(dayKey, cpId); var cur = {}; var old = data.checks[key] || {}; for (var k in old) cur[k] = old[k]; if (cur[name]) delete cur[name]; else cur[name] = true; data.checks[key] = cur; persistChecks(key, cur); render(); }
+  function setAll(dayKey, cpId, val) { var key = cpKey(dayKey, cpId); var cur = {}; if (val) ALL_MEMBERS.forEach(function (n) { cur[n] = true; }); data.checks[key] = cur; persistChecks(key, cur); render(); }
+  function moveCp(dayKey, cpId, dir) { var list = data.checkpoints[dayKey] || []; var i = -1; list.forEach(function (c, idx) { if (c.id === cpId) i = idx; }); var j = i + dir; if (i < 0 || j < 0 || j >= list.length) return; var t = list[i]; list[i] = list[j]; list[j] = t; persistCheckpoints(dayKey); render(); }
+  function removeCp(dayKey, cpId) { var key = cpKey(dayKey, cpId); data.checkpoints[dayKey] = (data.checkpoints[dayKey] || []).filter(function (c) { return c.id !== cpId; }); delete data.checks[key]; if (ui.openCp === cpId) ui.openCp = null; if (useServer) { var o = {}; o["checks." + key] = fb.fs.deleteField(); persistCheckpoints(dayKey, o); } else persistCheckpoints(dayKey); render(); }
+  function addCp(label) { label = (label || "").trim(); if (!label) return; var list = data.checkpoints[ui.activeDay] || []; list.push({ id: ui.activeDay + "_c" + Date.now(), label: label }); data.checkpoints[ui.activeDay] = list; ui.adding = false; persistCheckpoints(ui.activeDay); render(); }
 
   /* ---- 영수증 ---- */
   function compressImage(file, cb) {
@@ -399,6 +436,7 @@ html, body { background: #e9e4d7; }
       + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>인원 점호</button>'
       + '<button class="nav-item ' + (ui.mode === "receipts" ? "on" : "") + '" data-act="mode" data-mode="receipts">'
       + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l3-2 3 2 3-2 3 2 3-2V2l-3 2-3-2-3 2-3-2-3 2z"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="14" y2="13"/></svg>영수증 내역</button></nav>';
+    html += renderDetail();
     if (ui.modalImgs && ui.modalImgs.length) html += '<div class="modal" data-act="modal-close"><button class="modal-close" data-act="modal-close">×</button><div class="modal-scroll">' + ui.modalImgs.map(function (u) { return '<img src="' + u + '" alt="영수증" />'; }).join("") + '</div></div>';
 
     document.getElementById("root").innerHTML = html;
@@ -499,8 +537,8 @@ html, body { background: #e9e4d7; }
         var d = new Date(r.ts);
         var ds = d.getFullYear() + "." + ("0" + (d.getMonth() + 1)).slice(-2) + "." + ("0" + d.getDate()).slice(-2) + " " + ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2);
         var imgs = getImgs(r);
-        html += '<div class="rcpt-item"><div class="rcpt-thumbwrap" data-act="view" data-img="' + r.id + '"><img class="rcpt-thumb" src="' + (imgs[0] || "") + '" alt="영수증" />' + (imgs.length > 1 ? '<span class="thumb-badge">+' + (imgs.length - 1) + '</span>' : '') + '</div>'
-          + '<div class="rcpt-info"><div class="rcpt-purpose">' + esc(r.purpose) + '</div>'
+        html += '<div class="rcpt-item"><div class="rcpt-thumbwrap" data-act="detail" data-id="' + r.id + '"><img class="rcpt-thumb" src="' + (imgs[0] || "") + '" alt="영수증" />' + (imgs.length > 1 ? '<span class="thumb-badge">+' + (imgs.length - 1) + '</span>' : '') + '</div>'
+          + '<div class="rcpt-info" data-act="detail" data-id="' + r.id + '"><div class="rcpt-purpose">' + esc(r.purpose) + '</div>'
           + '<div class="rcpt-amt"><small>¥</small>' + fmt(r.amount) + '</div>'
           + '<div class="rcpt-krw">≈ ₩' + krw(r.amount) + '</div>'
           + (r.detail ? '<div class="rcpt-detail">' + esc(r.detail) + '</div>' : '')
@@ -511,6 +549,26 @@ html, body { background: #e9e4d7; }
     }
     html += '<p class="foot">사진·금액·용도는 필수 · ' + (useServer ? "사진 포함 서버에 저장(여러 기기 공유)" : "이 기기에 저장됩니다") + '</p></div>';
     return html;
+  }
+
+  function renderDetail() {
+    if (!ui.detailId) return "";
+    var r = receipts.filter(function (x) { return x.id === ui.detailId; })[0];
+    if (!r) return "";
+    var imgs = getImgs(r);
+    var d = new Date(r.ts);
+    var ds = d.getFullYear() + "." + ("0" + (d.getMonth() + 1)).slice(-2) + "." + ("0" + d.getDate()).slice(-2) + " " + ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2);
+    var h = '<div class="sheet"><div class="sheet-bar"><button class="sheet-close" data-act="detail-close">‹ 닫기</button></div><div class="sheet-body">';
+    h += '<div class="sheet-purpose">' + esc(r.purpose) + '</div>';
+    h += '<div class="sheet-amt"><small>¥</small>' + fmt(r.amount) + ' <span class="sheet-krw">≈ ₩' + krw(r.amount) + '</span></div>';
+    h += '<div class="sheet-tags">' + (r.card ? '<span class="rcpt-card">' + esc(cardLabel(r.card)) + '</span>' : '') + (r.payer ? '<span class="rcpt-payer">' + esc(r.payer) + '</span>' : '') + '<span class="sheet-date">' + ds + '</span></div>';
+    if (r.detail) h += '<div class="sheet-label">세부 내역</div><div class="sheet-detail">' + esc(r.detail) + '</div>';
+    h += '<div class="sheet-label">사진 ' + imgs.length + '장</div><div class="sheet-photos">';
+    for (var i = 0; i < imgs.length; i++) h += '<img src="' + imgs[i] + '" data-act="view" data-img="' + r.id + '" alt="영수증 ' + (i + 1) + '" />';
+    h += '</div>';
+    h += '<div class="sheet-actions"><button class="act" data-act="edit" data-id="' + r.id + '">수정</button><button class="act act-del" data-act="rcpt-del" data-id="' + r.id + '">삭제</button></div>';
+    h += '</div></div>';
+    return h;
   }
 
   /* ---- 이벤트 ---- */
@@ -528,18 +586,20 @@ html, body { background: #e9e4d7; }
     else if (act === "add-open") { ui.adding = true; render(); }
     else if (act === "add-cancel") { ui.adding = false; render(); }
     else if (act === "add-submit") { var i = document.getElementById("addInput"); addCp(i ? i.value : ""); }
-    else if (act === "rcpt-add") { tempImgs = []; ui.editingId = null; ui.rcptAdding = true; render(); }
-    else if (act === "edit") { var eid = btn.getAttribute("data-id"); var er = receipts.filter(function (x) { return x.id === eid; })[0]; if (er) { ui.editingId = eid; ui.rcptAdding = false; tempImgs = getImgs(er).slice(); render(); } }
+    else if (act === "rcpt-add") { tempImgs = []; ui.editingId = null; ui.detailId = null; ui.rcptAdding = true; render(); }
+    else if (act === "edit") { var eid = btn.getAttribute("data-id"); var er = receipts.filter(function (x) { return x.id === eid; })[0]; if (er) { ui.editingId = eid; ui.detailId = null; ui.rcptAdding = false; tempImgs = getImgs(er).slice(); render(); } }
     else if (act === "rcpt-cancel") { tempImgs = []; ui.rcptAdding = false; ui.editingId = null; render(); }
     else if (act === "rcpt-submit") { submitReceipt(); }
-    else if (act === "rcpt-del") { deleteReceipt(btn.getAttribute("data-id")); }
+    else if (act === "rcpt-del") { ui.detailId = null; deleteReceipt(btn.getAttribute("data-id")); }
+    else if (act === "detail") { ui.detailId = btn.getAttribute("data-id"); render(); }
+    else if (act === "detail-close") { ui.detailId = null; render(); }
     else if (act === "view") { var id = btn.getAttribute("data-img"); var r = receipts.filter(function (x) { return x.id === id; })[0]; if (r) { ui.modalImgs = getImgs(r); render(); } }
     else if (act === "modal-close") { ui.modalImgs = null; render(); }
   });
   document.getElementById("root").addEventListener("change", function (e) {
     if (e.target && e.target.id === "rateInput") {
       var v = parseFloat(e.target.value);
-      if (v > 0) { rate = v; try { localStorage.setItem(RATE_KEY, String(v)); } catch (er) {} if (data) { data.rate = v; saveRollcall(); } render(); }
+      if (v > 0) { rate = v; try { localStorage.setItem(RATE_KEY, String(v)); } catch (er) {} if (data) { data.rate = v; persistRate(v); } render(); }
     }
   });
 
@@ -562,10 +622,17 @@ html, body { background: #e9e4d7; }
       try { fs.enableIndexedDbPersistence(db).catch(function () {}); } catch (e) {}
       fb.fs = fs; fb.db = db; fb.rollcallRef = fs.doc(db, "trip", "rollcall");
       useServer = true;
+      data = buildInitial(); // 서버 모드에선 로컬 캐시값을 신뢰하지 않고 서버 스냅샷을 기다림
       var seeded = false;
       fs.onSnapshot(fb.rollcallRef, function (snap) {
-        if (snap.exists()) { var d = snap.data(); if (d && d.checkpoints) { data = d; if (d.rate) rate = d.rate; render(); } }
-        else if (!seeded) { seeded = true; data.rate = rate; fs.setDoc(fb.rollcallRef, data); }
+        var fromCache = snap.metadata && snap.metadata.fromCache;
+        if (snap.exists()) {
+          var d = snap.data();
+          if (d && d.checkpoints) { data = d; if (d.rate) rate = d.rate; render(); }
+        } else if (!fromCache && !seeded) {
+          // 서버가 '문서 없음'을 확정했을 때만 최초 1회 생성 (빈 캐시로는 절대 덮어쓰지 않음)
+          seeded = true; var init = buildInitial(); init.rate = rate; fs.setDoc(fb.rollcallRef, init);
+        }
       }, function (err) { console.error(err); });
       fs.onSnapshot(fs.collection(db, "receipts"), function (snap) {
         var arr = []; snap.forEach(function (x) { arr.push(x.data()); });
