@@ -120,6 +120,13 @@ html, body { background: #e9e4d7; }
 .pr-sum th { background:#f0ece0; border:1px solid #ccc4ac; padding:6px; font-size:10px; }
 .pr-sum td { border:1px solid #ccc4ac; padding:8px; font-size:13px; font-weight:700; text-align:center; }
 .pr-cards { font-size:10.5px; color:#333; margin-bottom:12px; }
+.pr-reimburse { display:flex; justify-content:space-between; align-items:center; gap:10px; border:2px solid #c0392b; background:#fdecea; color:#922; padding:9px 12px; border-radius:6px; font-size:11.5px; margin:8px 0 14px; }
+.pr-reimburse span { font-size:15px; font-weight:700; white-space:nowrap; }
+.pr-reimburse.none { border-color:#bbb; background:#f5f5f5; color:#666; justify-content:flex-start; }
+.pr-row-personal td { background:#fdecea; }
+.pr-sec { font-size:12px; font-weight:700; color:#0e302b; background:#f0ece0; border:1px solid #ccc4ac; padding:7px 9px; margin-top:16px; }
+.pr-sec.personal { background:#fdecea; border-color:#e3b4ad; color:#922; }
+.pr-sec-kind { font-size:9.5px; font-weight:700; padding:1px 6px; border:1px solid currentColor; border-radius:8px; }
 .pr-tbl { width:100%; border-collapse:collapse; margin-bottom:16px; }
 .pr-tbl th, .pr-tbl td { border:1px solid #c9c2b0; padding:5px 6px; font-size:10px; vertical-align:top; }
 .pr-tbl thead th { background:#0e302b; color:#fff; }
@@ -260,9 +267,9 @@ html, body { background: #e9e4d7; }
   var TOTAL = ALL_MEMBERS.length;
 
   var CARDS = [
-    { id: "ibk", name: "BC", last4: "6967" },
-    { id: "shinhan", name: "유니온페이", last4: "8232" },
-    { id: "cash", name: "현금/기타", last4: "" }
+    { id: "ibk", name: "BC", last4: "6967", kind: "법인" },
+    { id: "shinhan", name: "유니온페이", last4: "8232", kind: "개인" },
+    { id: "cash", name: "현금/기타", last4: "", kind: "기타" }
   ];
   var PAYER_LIST = ALL_MEMBERS.slice().sort(function (a, b) { return a.localeCompare(b, "ko"); });
 
@@ -684,16 +691,31 @@ html, body { background: #e9e4d7; }
   }
 
   function buildPrintReport() {
-    var list = receipts.slice().sort(function (a, b) { return paidOf(a) - paidOf(b); });
     var total = receipts.reduce(function (s, r) { return s + (Number(r.amount) || 0); }, 0);
     var totalKrw = receipts.reduce(function (s, r) { return s + Math.round((Number(r.amount) || 0) * rcptRate(r)); }, 0);
-    var byCard = CARDS.map(function (c) {
-      var sum = receipts.reduce(function (a, r) { return a + (r.card === c.id ? (Number(r.amount) || 0) : 0); }, 0);
-      return { name: cardLabel(c.id), sum: sum };
-    }).filter(function (x) { return x.sum > 0; });
     var now = new Date();
     var today = now.getFullYear() + "." + ("0" + (now.getMonth() + 1)).slice(-2) + "." + ("0" + now.getDate()).slice(-2);
     function dt(ms) { var d = new Date(ms), p = function (n) { return ("0" + n).slice(-2); }; return d.getFullYear() + "." + p(d.getMonth() + 1) + "." + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes()); }
+
+    // 결제 카드별 그룹화
+    var groups = {};
+    function grp(id) {
+      var key = id || "none";
+      if (!groups[key]) {
+        var c = CARDS.filter(function (x) { return x.id === id; })[0];
+        groups[key] = { name: c ? cardLabel(id) : "미지정", kind: c ? (c.kind || "기타") : "미지정", items: [], yuan: 0, krw: 0 };
+      }
+      return groups[key];
+    }
+    receipts.slice().sort(function (a, b) { return paidOf(a) - paidOf(b); }).forEach(function (r) {
+      var g = grp(r.card); g.items.push(r); g.yuan += Number(r.amount) || 0; g.krw += Math.round((Number(r.amount) || 0) * rcptRate(r));
+    });
+    var ordered = [];
+    CARDS.forEach(function (c) { if (groups[c.id]) ordered.push(groups[c.id]); });
+    if (groups["none"]) ordered.push(groups["none"]);
+
+    var personalYuan = 0, personalKrw = 0;
+    ordered.forEach(function (g) { if (g.kind === "개인") { personalYuan += g.yuan; personalKrw += g.krw; } });
 
     var h = '<div class="pr-doc">';
     h += '<div class="pr-head"><div class="pr-kicker">CORPORATE TRIP · SHANGHAI</div><h1>상해 전시회 경비 내역서</h1>'
@@ -701,25 +723,42 @@ html, body { background: #e9e4d7; }
 
     h += '<table class="pr-sum"><tr><th>총 지출(위안)</th><th>원화 환산(건별 환율 합산)</th><th>건수</th></tr>'
       + '<tr><td>¥' + fmt(total) + '</td><td>₩' + totalKrw.toLocaleString("ko-KR") + '</td><td>' + receipts.length + '건</td></tr></table>';
-    if (byCard.length) {
-      h += '<div class="pr-cards">카드별 합계 : ' + byCard.map(function (x) { return esc(x.name) + " ¥" + fmt(x.sum); }).join("&nbsp; · &nbsp;") + '</div>';
+
+    // 개인 카드 환급 강조
+    if (personalYuan > 0) {
+      h += '<div class="pr-reimburse"><b>개인 카드 결제 — 회사 지급(환급) 대상</b><span>₩' + personalKrw.toLocaleString("ko-KR") + '&nbsp; (¥' + fmt(personalYuan) + ')</span></div>';
+    } else {
+      h += '<div class="pr-reimburse none">개인 카드 결제 내역 없음 (환급 대상 없음)</div>';
     }
 
-    h += '<table class="pr-tbl"><thead><tr><th>No</th><th>결제일시</th><th>용도</th><th>세부 내역</th><th>카드</th><th>결제자</th><th class="r">금액(¥)</th><th class="r">환율(₩/¥)</th><th class="r">금액(₩)</th></tr></thead><tbody>';
-    list.forEach(function (r, i) {
-      var rt = rcptRate(r);
-      h += '<tr><td>' + (i + 1) + '</td><td>' + dt(paidOf(r)) + '</td><td>' + esc(r.purpose || "") + '</td><td>' + esc(r.detail || "") + '</td><td>' + esc(r.card ? cardLabel(r.card) : "") + '</td><td>' + esc(r.payer || "") + '</td>'
-        + '<td class="r">' + fmt(r.amount) + '</td><td class="r">' + rateStr(rt) + '</td><td class="r">' + Math.round((Number(r.amount) || 0) * rt).toLocaleString("ko-KR") + '</td></tr>';
+    // 카드별 합계 표
+    h += '<table class="pr-tbl"><thead><tr><th>결제 카드</th><th>구분</th><th class="r">건수</th><th class="r">금액(¥)</th><th class="r">금액(₩)</th></tr></thead><tbody>';
+    ordered.forEach(function (g) {
+      h += '<tr' + (g.kind === "개인" ? ' class="pr-row-personal"' : '') + '><td>' + esc(g.name) + '</td><td>' + g.kind + (g.kind === "개인" ? " (환급)" : "") + '</td><td class="r">' + g.items.length + '</td><td class="r">¥' + fmt(g.yuan) + '</td><td class="r">₩' + g.krw.toLocaleString("ko-KR") + '</td></tr>';
     });
-    h += '<tr class="pr-total"><td colspan="6">합계</td><td class="r">¥' + fmt(total) + '</td><td class="r"></td><td class="r">₩' + totalKrw.toLocaleString("ko-KR") + '</td></tr>';
-    h += '</tbody></table>';
+    h += '<tr class="pr-total"><td colspan="2">합계</td><td class="r">' + receipts.length + '</td><td class="r">¥' + fmt(total) + '</td><td class="r">₩' + totalKrw.toLocaleString("ko-KR") + '</td></tr></tbody></table>';
 
+    // 카드별 상세 내역
+    ordered.forEach(function (g) {
+      h += '<div class="pr-sec' + (g.kind === "개인" ? " personal" : "") + '">■ ' + esc(g.name) + ' <span class="pr-sec-kind">' + g.kind + '</span> &nbsp;—&nbsp; ' + g.items.length + '건 · ¥' + fmt(g.yuan) + ' / ₩' + g.krw.toLocaleString("ko-KR") + (g.kind === "개인" ? ' · 회사 지급 대상' : '') + '</div>';
+      h += '<table class="pr-tbl"><thead><tr><th>No</th><th>결제일시</th><th>용도</th><th>세부 내역</th><th>결제자</th><th class="r">금액(¥)</th><th class="r">환율</th><th class="r">금액(₩)</th></tr></thead><tbody>';
+      g.items.forEach(function (r, i) {
+        var rt = rcptRate(r);
+        h += '<tr><td>' + (i + 1) + '</td><td>' + dt(paidOf(r)) + '</td><td>' + esc(r.purpose || "") + '</td><td>' + esc(r.detail || "") + '</td><td>' + esc(r.payer || "") + '</td>'
+          + '<td class="r">' + fmt(r.amount) + '</td><td class="r">' + rateStr(rt) + '</td><td class="r">' + Math.round((Number(r.amount) || 0) * rt).toLocaleString("ko-KR") + '</td></tr>';
+      });
+      h += '<tr class="pr-total"><td colspan="5">소계</td><td class="r">¥' + fmt(g.yuan) + '</td><td class="r"></td><td class="r">₩' + g.krw.toLocaleString("ko-KR") + '</td></tr></tbody></table>';
+    });
+
+    // 첨부 증빙 (카드별)
     h += '<div class="pr-evi-title">첨부 증빙 (영수증 사진)</div>';
-    list.forEach(function (r, i) {
-      var imgs = getImgs(r);
-      h += '<div class="pr-evi"><div class="pr-evi-h">No.' + (i + 1) + ' · ' + esc(r.purpose || "") + ' · ¥' + fmt(r.amount) + ' · ' + dt(paidOf(r)) + '</div><div class="pr-evi-imgs">';
-      imgs.forEach(function (u) { h += '<img src="' + u + '" />'; });
-      h += '</div></div>';
+    ordered.forEach(function (g) {
+      g.items.forEach(function (r, i) {
+        var imgs = getImgs(r);
+        h += '<div class="pr-evi"><div class="pr-evi-h">[' + esc(g.name) + (g.kind === "개인" ? " · 환급" : "") + '] ' + esc(r.purpose || "") + ' · ¥' + fmt(r.amount) + ' · ' + dt(paidOf(r)) + '</div><div class="pr-evi-imgs">';
+        imgs.forEach(function (u) { h += '<img src="' + u + '" />'; });
+        h += '</div></div>';
+      });
     });
     h += '</div>';
     return h;
