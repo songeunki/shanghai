@@ -416,11 +416,14 @@ html, body { background: #e9e4d7; }
         if (purpEl && d.merchant && !purpEl.value.trim()) purpEl.value = d.merchant;
         if (detEl && d.items) detEl.value = (detEl.value ? detEl.value + "\n" : "") + d.items;
         var paidEl = document.getElementById("rPaidAt");
-        if (paidEl && !paidEl.value && d.date && /^\d{4}-\d{2}-\d{2}$/.test(d.date)) {
-          var tt = (d.time && /^\d{1,2}:\d{2}$/.test(d.time)) ? ("0" + d.time).slice(-5) : "12:00";
+        if (paidEl && d.date && /^\d{4}-\d{2}-\d{2}$/.test(d.date)) {
+          var m = (d.time || "").match(/(\d{1,2}):(\d{2})/);
+          var tt = m ? (("0" + m[1]).slice(-2) + ":" + m[2]) : "12:00";
           paidEl.value = d.date + "T" + tt;
         }
-        if (st) { st.textContent = "✓ 자동 인식 완료 — 결제시간·금액 확인 후 저장하세요."; st.className = "scan-status ok"; }
+        var okMsg = "✓ 자동 인식 완료 — 확인 후 저장하세요.";
+        if (paidEl && paidEl.value) okMsg = "✓ 인식 완료 — 결제 " + paidEl.value.replace("T", " ") + " · 확인 후 저장";
+        if (st) { st.textContent = okMsg; st.className = "scan-status ok"; }
         done && done();
       })
       .catch(function () { if (st) { st.textContent = "자동 인식 호출 실패 — api/scan 배포 여부를 확인하세요."; st.className = "scan-status err"; } done && done(); });
