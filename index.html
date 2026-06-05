@@ -151,13 +151,14 @@ html, body { background: #e9e4d7; }
 .rcpt-x { background:none; border:none; color:#c4bdab; font-size:20px; cursor:pointer; padding:2px 4px; line-height:1; flex-shrink:0; }
 .rcpt-acts { display:flex; flex-direction:column; align-items:flex-end; gap:6px; flex-shrink:0; }
 .rcpt-edit { background:none; border:1px solid #e3ded0; color:#5e5a4d; font-size:11.5px; font-weight:600; padding:4px 9px; border-radius:7px; font-family:inherit; cursor:pointer; }
+.rcpt-del-btn { color:#c25b4e; border-color:#f0d4ce; }
 .rcpt-empty { text-align:center; color:#a59f8d; font-size:13.5px; padding:40px 20px; }
 
 .modal { position:fixed; inset:0; background:rgba(8,20,18,.92); display:flex; align-items:center; justify-content:center; z-index:60; padding:20px; }
 .sheet { position:fixed; inset:0; background:#f4f1e9; z-index:40; max-width:560px; margin:0 auto; display:flex; flex-direction:column; }
 .sheet-bar { padding:calc(10px + env(safe-area-inset-top)) 12px 8px; border-bottom:1px solid #e7e1d2; }
 .sheet-close { background:none; border:none; font-family:inherit; font-size:15px; font-weight:600; color:#0e302b; cursor:pointer; padding:6px 2px; }
-.sheet-body { overflow:auto; padding:16px 18px calc(28px + env(safe-area-inset-bottom)); -webkit-overflow-scrolling:touch; }
+.sheet-body { overflow:auto; padding:calc(20px + env(safe-area-inset-top)) 18px calc(28px + env(safe-area-inset-bottom)); -webkit-overflow-scrolling:touch; }
 .sheet-purpose { font-size:20px; font-weight:700; color:#1d2b27; word-break:break-word; }
 .sheet-amt { font-family:'Gowun Batang',serif; font-size:27px; font-weight:700; color:#13403a; margin-top:5px; }
 .sheet-amt small { color:#c9a24b; font-size:18px; margin-right:2px; }
@@ -620,7 +621,7 @@ html, body { background: #e9e4d7; }
           + '<div class="rcpt-krw">≈ ₩' + Math.round(r.amount * rt).toLocaleString("ko-KR") + ' · 환율 ₩' + rateStr(rt) + '/¥</div>'
           + (r.detail ? '<div class="rcpt-detail">' + esc(r.detail) + '</div>' : '')
           + '<div class="rcpt-meta"><span>' + ds + '</span>' + (r.payer ? '<span class="rcpt-payer" style="background:' + pc.bg + ';color:' + pc.fg + '">' + esc(r.payer) + '</span>' : '') + (r.card ? '<span class="rcpt-card" style="background:' + cc.bg + ';color:' + cc.fg + '">' + esc(cardLabel(r.card)) + '</span>' : '') + '</div></div>'
-          + '<div class="rcpt-acts"><button class="rcpt-edit" data-act="edit" data-id="' + r.id + '">수정</button><button class="rcpt-x" data-act="rcpt-del" data-id="' + r.id + '">×</button></div></div>';
+          + '<div class="rcpt-acts"><button class="rcpt-edit" data-act="edit" data-id="' + r.id + '">수정</button><button class="rcpt-edit rcpt-del-btn" data-act="rcpt-del" data-id="' + r.id + '">삭제</button></div></div>';
       });
       html += '</div>';
     }
@@ -637,7 +638,7 @@ html, body { background: #e9e4d7; }
     var pc = payerColor(r.payer), cc = cardColor(r.card);
     var d = new Date(paidOf(r));
     var ds = d.getFullYear() + "." + ("0" + (d.getMonth() + 1)).slice(-2) + "." + ("0" + d.getDate()).slice(-2) + " " + ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2);
-    var h = '<div class="sheet"><div class="sheet-bar"><button class="sheet-close" data-act="detail-close">‹ 닫기</button></div><div class="sheet-body">';
+    var h = '<div class="sheet"><div class="sheet-body">';
     h += '<div class="sheet-purpose">' + esc(r.purpose) + '</div>';
     h += '<div class="sheet-amt"><small>¥</small>' + fmt(r.amount) + ' <span class="sheet-krw">≈ ₩' + Math.round(r.amount * rt).toLocaleString("ko-KR") + '</span></div>';
     h += '<div class="sheet-rate">적용 환율 ₩' + rateStr(rt) + '/¥' + (r.rateDate ? ' · ' + r.rateDate + ' 기준' : '') + '</div>';
@@ -646,7 +647,7 @@ html, body { background: #e9e4d7; }
     h += '<div class="sheet-label">사진 ' + imgs.length + '장</div><div class="sheet-photos">';
     for (var i = 0; i < imgs.length; i++) h += '<img src="' + imgs[i] + '" data-act="view" data-img="' + r.id + '" alt="영수증 ' + (i + 1) + '" />';
     h += '</div>';
-    h += '<div class="sheet-actions"><button class="act" data-act="edit" data-id="' + r.id + '">수정</button><button class="act act-del" data-act="rcpt-del" data-id="' + r.id + '">삭제</button></div>';
+    h += '<div class="sheet-actions"><button class="act" data-act="edit" data-id="' + r.id + '">수정</button><button class="act act-del" data-act="rcpt-del" data-id="' + r.id + '">삭제</button><button class="act act-ghost" data-act="detail-close">닫기</button></div>';
     h += '</div></div>';
     return h;
   }
