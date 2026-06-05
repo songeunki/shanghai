@@ -404,7 +404,11 @@ html, body { background: #e9e4d7; }
       .then(function (r) { return r.json(); })
       .then(function (d) {
         if (!d || d.error) {
-          if (st) { st.textContent = (d && d.error === "no_key") ? "자동 인식 미설정 — 직접 입력하세요." : "자동 인식 실패 — 직접 입력하세요."; st.className = "scan-status err"; }
+          var msg = "자동 인식 실패 — 직접 입력하세요.";
+          if (d && d.error === "no_key") msg = "자동 인식 미설정(API 키 없음) — 직접 입력하세요.";
+          else if (d && d.error === "no_image") msg = "이미지 전송 오류 — 다시 시도하세요.";
+          else if (d && d.detail) msg = "인식 오류: " + String(d.detail).slice(0, 90);
+          if (st) { st.textContent = msg; st.className = "scan-status err"; }
           done && done(); return;
         }
         var amtEl = document.getElementById("rAmount"), purpEl = document.getElementById("rPurpose"), detEl = document.getElementById("rDetail");
@@ -419,7 +423,7 @@ html, body { background: #e9e4d7; }
         if (st) { st.textContent = "✓ 자동 인식 완료 — 결제시간·금액 확인 후 저장하세요."; st.className = "scan-status ok"; }
         done && done();
       })
-      .catch(function () { if (st) { st.textContent = "자동 인식 실패 — 직접 입력하세요."; st.className = "scan-status err"; } done && done(); });
+      .catch(function () { if (st) { st.textContent = "자동 인식 호출 실패 — api/scan 배포 여부를 확인하세요."; st.className = "scan-status err"; } done && done(); });
   }
   function submitReceipt() {
     var amtEl = document.getElementById("rAmount"), purpEl = document.getElementById("rPurpose"), payEl = document.getElementById("rPayer"), errEl = document.getElementById("rErr");
