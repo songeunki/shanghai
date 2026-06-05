@@ -685,7 +685,7 @@ html, body { background: #e9e4d7; }
     h += '<div class="sheet-label">사진 ' + imgs.length + '장</div><div class="sheet-photos">';
     for (var i = 0; i < imgs.length; i++) h += '<img src="' + imgs[i] + '" data-act="view" data-img="' + r.id + '" alt="영수증 ' + (i + 1) + '" />';
     h += '</div>';
-    h += '<div class="sheet-actions"><button class="act" data-act="edit" data-id="' + r.id + '">수정</button><button class="act act-del" data-act="rcpt-del" data-id="' + r.id + '">삭제</button><button class="act act-ghost" data-act="detail-close">닫기</button></div>';
+    h += '<div class="sheet-actions"><button class="act" data-act="edit" data-id="' + r.id + '">수정</button><button class="act act-del" data-act="rcpt-del" data-id="' + r.id + '">삭제</button><button class="act act-ghost" data-act="detail-close">목록보기</button></div>';
     h += '</div></div>';
     return h;
   }
