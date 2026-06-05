@@ -127,6 +127,7 @@ html, body { background: #e9e4d7; }
 .pr-sec { font-size:12px; font-weight:700; color:#0e302b; background:#f0ece0; border:1px solid #ccc4ac; padding:7px 9px; margin-top:16px; }
 .pr-sec.personal { background:#fdecea; border-color:#e3b4ad; color:#922; }
 .pr-sec-kind { font-size:9.5px; font-weight:700; padding:1px 6px; border:1px solid currentColor; border-radius:8px; }
+.pr-sec2 { font-size:12.5px; font-weight:700; color:#0e302b; border-top:2px solid #0e302b; padding-top:10px; margin:16px 0 8px; }
 .pr-tbl { width:100%; border-collapse:collapse; margin-bottom:16px; }
 .pr-tbl th, .pr-tbl td { border:1px solid #c9c2b0; padding:5px 6px; font-size:10px; vertical-align:top; }
 .pr-tbl thead th { background:#0e302b; color:#fff; }
@@ -738,24 +739,46 @@ html, body { background: #e9e4d7; }
     });
     h += '<tr class="pr-total"><td colspan="2">합계</td><td class="r">' + receipts.length + '</td><td class="r">¥' + fmt(total) + '</td><td class="r">₩' + totalKrw.toLocaleString("ko-KR") + '</td></tr></tbody></table>';
 
-    // 카드별 상세 내역
-    ordered.forEach(function (g) {
-      h += '<div class="pr-sec' + (g.kind === "개인" ? " personal" : "") + '">■ ' + esc(g.name) + ' <span class="pr-sec-kind">' + g.kind + '</span> &nbsp;—&nbsp; ' + g.items.length + '건 · ¥' + fmt(g.yuan) + ' / ₩' + g.krw.toLocaleString("ko-KR") + (g.kind === "개인" ? ' · 회사 지급 대상' : '') + '</div>';
-      h += '<table class="pr-tbl"><thead><tr><th>No</th><th>결제일시</th><th>용도</th><th>세부 내역</th><th>결제자</th><th class="r">금액(¥)</th><th class="r">환율</th><th class="r">금액(₩)</th></tr></thead><tbody>';
+    // 일자별 그룹화
+    var dmap = {};
+    receipts.slice().sort(function (a, b) { return paidOf(a) - paidOf(b); }).forEach(function (r) {
+      var k = ymd(paidOf(r));
+      if (!dmap[k]) dmap[k] = { items: [], yuan: 0, krw: 0 };
+      dmap[k].items.push(r); dmap[k].yuan += Number(r.amount) || 0; dmap[k].krw += Math.round((Number(r.amount) || 0) * rcptRate(r));
+    });
+    var dates = Object.keys(dmap).sort();
+    function dlabel(k) { var pp = k.split("-"); var dd = new Date(+pp[0], +pp[1] - 1, +pp[2]); var wd = ["일", "월", "화", "수", "목", "금", "토"][dd.getDay()]; return pp[0] + "." + pp[1] + "." + pp[2] + " (" + wd + ")"; }
+    function hm(ms) { var d = new Date(ms), p = function (n) { return ("0" + n).slice(-2); }; return p(d.getHours()) + ":" + p(d.getMinutes()); }
+    function kindOf(r) { var c = r.card ? (CARDS.filter(function (x) { return x.id === r.card; })[0] || null) : null; return c ? (c.kind || "기타") : (r.card ? "기타" : "미지정"); }
+
+    // 일자별 합계 표
+    h += '<div class="pr-sec2">일자별 사용금액</div>';
+    h += '<table class="pr-tbl"><thead><tr><th>일자</th><th class="r">건수</th><th class="r">금액(¥)</th><th class="r">금액(₩)</th></tr></thead><tbody>';
+    dates.forEach(function (k) {
+      var g = dmap[k];
+      h += '<tr><td>' + dlabel(k) + '</td><td class="r">' + g.items.length + '</td><td class="r">¥' + fmt(g.yuan) + '</td><td class="r">₩' + g.krw.toLocaleString("ko-KR") + '</td></tr>';
+    });
+    h += '<tr class="pr-total"><td>합계</td><td class="r">' + receipts.length + '</td><td class="r">¥' + fmt(total) + '</td><td class="r">₩' + totalKrw.toLocaleString("ko-KR") + '</td></tr></tbody></table>';
+
+    // 일자별 상세 내역
+    dates.forEach(function (k) {
+      var g = dmap[k];
+      h += '<div class="pr-sec">■ ' + dlabel(k) + ' &nbsp;—&nbsp; ' + g.items.length + '건 · ¥' + fmt(g.yuan) + ' / ₩' + g.krw.toLocaleString("ko-KR") + '</div>';
+      h += '<table class="pr-tbl"><thead><tr><th>No</th><th>시각</th><th>용도</th><th>세부 내역</th><th>카드</th><th>구분</th><th>결제자</th><th class="r">금액(¥)</th><th class="r">환율</th><th class="r">금액(₩)</th></tr></thead><tbody>';
       g.items.forEach(function (r, i) {
-        var rt = rcptRate(r);
-        h += '<tr><td>' + (i + 1) + '</td><td>' + dt(paidOf(r)) + '</td><td>' + esc(r.purpose || "") + '</td><td>' + esc(r.detail || "") + '</td><td>' + esc(r.payer || "") + '</td>'
+        var rt = rcptRate(r); var kind = kindOf(r);
+        h += '<tr' + (kind === "개인" ? ' class="pr-row-personal"' : '') + '><td>' + (i + 1) + '</td><td>' + hm(paidOf(r)) + '</td><td>' + esc(r.purpose || "") + '</td><td>' + esc(r.detail || "") + '</td><td>' + esc(r.card ? cardLabel(r.card) : "") + '</td><td>' + kind + '</td><td>' + esc(r.payer || "") + '</td>'
           + '<td class="r">' + fmt(r.amount) + '</td><td class="r">' + rateStr(rt) + '</td><td class="r">' + Math.round((Number(r.amount) || 0) * rt).toLocaleString("ko-KR") + '</td></tr>';
       });
-      h += '<tr class="pr-total"><td colspan="5">소계</td><td class="r">¥' + fmt(g.yuan) + '</td><td class="r"></td><td class="r">₩' + g.krw.toLocaleString("ko-KR") + '</td></tr></tbody></table>';
+      h += '<tr class="pr-total"><td colspan="7">소계</td><td class="r">¥' + fmt(g.yuan) + '</td><td class="r"></td><td class="r">₩' + g.krw.toLocaleString("ko-KR") + '</td></tr></tbody></table>';
     });
 
-    // 첨부 증빙 (카드별)
+    // 첨부 증빙 (일자별)
     h += '<div class="pr-evi-title">첨부 증빙 (영수증 사진)</div>';
-    ordered.forEach(function (g) {
-      g.items.forEach(function (r, i) {
-        var imgs = getImgs(r);
-        h += '<div class="pr-evi"><div class="pr-evi-h">[' + esc(g.name) + (g.kind === "개인" ? " · 환급" : "") + '] ' + esc(r.purpose || "") + ' · ¥' + fmt(r.amount) + ' · ' + dt(paidOf(r)) + '</div><div class="pr-evi-imgs">';
+    dates.forEach(function (k) {
+      dmap[k].items.forEach(function (r) {
+        var imgs = getImgs(r); var kk = kindOf(r);
+        h += '<div class="pr-evi"><div class="pr-evi-h">[' + dlabel(k) + ' · ' + esc(r.card ? cardLabel(r.card) : "미지정") + (kk === "개인" ? " · 환급" : "") + '] ' + esc(r.purpose || "") + ' · ¥' + fmt(r.amount) + ' · ' + hm(paidOf(r)) + '</div><div class="pr-evi-imgs">';
         imgs.forEach(function (u) { h += '<img src="' + u + '" />'; });
         h += '</div></div>';
       });
