@@ -101,6 +101,35 @@ html, body { background: #e9e4d7; }
 .rate-input { width:62px; background:rgba(255,255,255,.12); border:1px solid rgba(255,255,255,.18); color:#f4f1e9; border-radius:7px; padding:3px 6px; font-size:12px; font-family:inherit; outline:none; }
 
 .rcpt-add { width:100%; background:#c9a24b; color:#0e302b; border:none; border-radius:14px; padding:14px; font-size:15px; font-weight:700; font-family:inherit; cursor:pointer; margin-bottom:14px; }
+.pdf-btn { width:100%; background:#fff; color:#0e302b; border:1.5px solid #0e302b; border-radius:14px; padding:13px; font-size:14.5px; font-weight:700; font-family:inherit; cursor:pointer; margin-bottom:14px; }
+
+/* 인쇄(PDF) 영역: 화면에선 숨김 */
+#printArea { display:none; }
+@media print {
+  html, body { background:#fff !important; }
+  #root, #rcptFile, #rcptCam, .botnav, .modal, .modal2, .sheet { display:none !important; }
+  #printArea { display:block !important; }
+  @page { size:A4; margin:14mm; }
+}
+.pr-doc { font-family:'IBM Plex Sans KR', -apple-system, sans-serif; color:#111; font-size:11px; line-height:1.45; }
+.pr-head { border-bottom:2px solid #0e302b; padding-bottom:8px; margin-bottom:12px; }
+.pr-kicker { font-size:9px; letter-spacing:.18em; color:#9a7b2e; font-weight:700; }
+.pr-head h1 { font-size:20px; margin:4px 0 4px; color:#0e302b; }
+.pr-sub { font-size:10px; color:#555; }
+.pr-sum { width:100%; border-collapse:collapse; margin-bottom:8px; }
+.pr-sum th { background:#f0ece0; border:1px solid #ccc4ac; padding:6px; font-size:10px; }
+.pr-sum td { border:1px solid #ccc4ac; padding:8px; font-size:13px; font-weight:700; text-align:center; }
+.pr-cards { font-size:10.5px; color:#333; margin-bottom:12px; }
+.pr-tbl { width:100%; border-collapse:collapse; margin-bottom:16px; }
+.pr-tbl th, .pr-tbl td { border:1px solid #c9c2b0; padding:5px 6px; font-size:10px; vertical-align:top; }
+.pr-tbl thead th { background:#0e302b; color:#fff; }
+.pr-tbl td.r, .pr-tbl th.r { text-align:right; white-space:nowrap; }
+.pr-tbl .pr-total td { background:#f0ece0; font-weight:700; }
+.pr-evi-title { font-size:13px; font-weight:700; color:#0e302b; border-top:2px solid #0e302b; padding-top:10px; margin-bottom:8px; page-break-before:always; }
+.pr-evi { page-break-inside:avoid; margin-bottom:14px; }
+.pr-evi-h { font-size:10.5px; font-weight:700; background:#f4f1e9; padding:5px 8px; border:1px solid #ccc4ac; }
+.pr-evi-imgs { display:flex; flex-wrap:wrap; gap:8px; padding:8px 0; }
+.pr-evi-imgs img { max-width:48%; max-height:380px; border:1px solid #ddd; }
 
 .rform { background:#fff; border:1px solid #e7e1d2; border-radius:16px; padding:15px; margin-bottom:14px; }
 .rform h3 { font-size:15px; margin-bottom:12px; color:#1d2b27; }
@@ -194,6 +223,7 @@ html, body { background: #e9e4d7; }
 <div id="root"><div class="screen"><div class="loading">불러오는 중…</div></div></div>
 <input type="file" id="rcptFile" accept="image/*" multiple style="display:none" />
 <input type="file" id="rcptCam" accept="image/*" capture="environment" style="display:none" />
+<div id="printArea"></div>
 
 <script>
 (function () {
@@ -603,6 +633,7 @@ html, body { background: #e9e4d7; }
         + '<div class="rform-btns"><button class="act" data-act="rcpt-submit">' + (ed ? '수정 저장' : '저장') + '</button><button class="act act-ghost" data-act="rcpt-cancel">취소</button></div></div>';
     } else {
       html += '<button class="rcpt-add" data-act="rcpt-add">+ 영수증 추가</button>';
+      if (receiptsLoaded && receipts.length > 0) html += '<button class="pdf-btn" data-act="export-pdf">📄 PDF 경비 내역서 출력</button>';
     }
     if (!receiptsLoaded) html += '<div class="rcpt-empty">불러오는 중…</div>';
     else if (receipts.length === 0 && !ui.rcptAdding && !ui.editingId) html += '<div class="rcpt-empty">아직 등록된 영수증이 없어요.<br/>위 버튼으로 사진·금액·용도를 등록하세요.</div>';
@@ -652,6 +683,58 @@ html, body { background: #e9e4d7; }
     return h;
   }
 
+  function buildPrintReport() {
+    var list = receipts.slice().sort(function (a, b) { return paidOf(a) - paidOf(b); });
+    var total = receipts.reduce(function (s, r) { return s + (Number(r.amount) || 0); }, 0);
+    var totalKrw = receipts.reduce(function (s, r) { return s + Math.round((Number(r.amount) || 0) * rcptRate(r)); }, 0);
+    var byCard = CARDS.map(function (c) {
+      var sum = receipts.reduce(function (a, r) { return a + (r.card === c.id ? (Number(r.amount) || 0) : 0); }, 0);
+      return { name: cardLabel(c.id), sum: sum };
+    }).filter(function (x) { return x.sum > 0; });
+    var now = new Date();
+    var today = now.getFullYear() + "." + ("0" + (now.getMonth() + 1)).slice(-2) + "." + ("0" + now.getDate()).slice(-2);
+    function dt(ms) { var d = new Date(ms), p = function (n) { return ("0" + n).slice(-2); }; return d.getFullYear() + "." + p(d.getMonth() + 1) + "." + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes()); }
+
+    var h = '<div class="pr-doc">';
+    h += '<div class="pr-head"><div class="pr-kicker">CORPORATE TRIP · SHANGHAI</div><h1>상해 전시회 경비 내역서</h1>'
+      + '<div class="pr-sub">수·목·금·토 (4일) · 9개 방 18명 &nbsp;|&nbsp; 작성일 ' + today + '</div></div>';
+
+    h += '<table class="pr-sum"><tr><th>총 지출(위안)</th><th>원화 환산(건별 환율 합산)</th><th>건수</th></tr>'
+      + '<tr><td>¥' + fmt(total) + '</td><td>₩' + totalKrw.toLocaleString("ko-KR") + '</td><td>' + receipts.length + '건</td></tr></table>';
+    if (byCard.length) {
+      h += '<div class="pr-cards">카드별 합계 : ' + byCard.map(function (x) { return esc(x.name) + " ¥" + fmt(x.sum); }).join("&nbsp; · &nbsp;") + '</div>';
+    }
+
+    h += '<table class="pr-tbl"><thead><tr><th>No</th><th>결제일시</th><th>용도</th><th>세부 내역</th><th>카드</th><th>결제자</th><th class="r">금액(¥)</th><th class="r">환율(₩/¥)</th><th class="r">금액(₩)</th></tr></thead><tbody>';
+    list.forEach(function (r, i) {
+      var rt = rcptRate(r);
+      h += '<tr><td>' + (i + 1) + '</td><td>' + dt(paidOf(r)) + '</td><td>' + esc(r.purpose || "") + '</td><td>' + esc(r.detail || "") + '</td><td>' + esc(r.card ? cardLabel(r.card) : "") + '</td><td>' + esc(r.payer || "") + '</td>'
+        + '<td class="r">' + fmt(r.amount) + '</td><td class="r">' + rateStr(rt) + '</td><td class="r">' + Math.round((Number(r.amount) || 0) * rt).toLocaleString("ko-KR") + '</td></tr>';
+    });
+    h += '<tr class="pr-total"><td colspan="6">합계</td><td class="r">¥' + fmt(total) + '</td><td class="r"></td><td class="r">₩' + totalKrw.toLocaleString("ko-KR") + '</td></tr>';
+    h += '</tbody></table>';
+
+    h += '<div class="pr-evi-title">첨부 증빙 (영수증 사진)</div>';
+    list.forEach(function (r, i) {
+      var imgs = getImgs(r);
+      h += '<div class="pr-evi"><div class="pr-evi-h">No.' + (i + 1) + ' · ' + esc(r.purpose || "") + ' · ¥' + fmt(r.amount) + ' · ' + dt(paidOf(r)) + '</div><div class="pr-evi-imgs">';
+      imgs.forEach(function (u) { h += '<img src="' + u + '" />'; });
+      h += '</div></div>';
+    });
+    h += '</div>';
+    return h;
+  }
+  function exportPdf() {
+    var area = document.getElementById("printArea");
+    if (!area) return;
+    area.innerHTML = buildPrintReport();
+    var oldTitle = document.title;
+    document.title = "상해전시회_경비내역서_" + ymd(Date.now());
+    var restore = function () { document.title = oldTitle; window.removeEventListener("afterprint", restore); };
+    window.addEventListener("afterprint", restore);
+    setTimeout(function () { window.print(); }, 200);
+  }
+
   /* ---- 이벤트 ---- */
   document.getElementById("root").addEventListener("click", function (e) {
     var btn = e.target.closest("[data-act]"); if (!btn) return;
@@ -678,6 +761,7 @@ html, body { background: #e9e4d7; }
     else if (act === "detail-close") { ui.detailId = null; render(); }
     else if (act === "view") { var id = btn.getAttribute("data-img"); var r = receipts.filter(function (x) { return x.id === id; })[0]; if (r) { ui.modalImgs = getImgs(r); render(); } }
     else if (act === "modal-close") { ui.modalImgs = null; render(); }
+    else if (act === "export-pdf") { exportPdf(); }
   });
   document.getElementById("root").addEventListener("change", function (e) {
     if (e.target && e.target.id === "rateInput") {
