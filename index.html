@@ -175,6 +175,15 @@ html, body { background: #e9e4d7; }
 .modal-close { position:fixed; top:calc(16px + env(safe-area-inset-top)); right:18px; color:#fff; font-size:30px; background:none; border:none; cursor:pointer; }
 
 .botnav { position:fixed; bottom:0; left:50%; transform:translateX(-50%); width:100%; max-width:560px; background:#fff; border-top:1px solid #e7e1d2; display:grid; grid-template-columns:1fr 1fr; z-index:20; padding-bottom:env(safe-area-inset-bottom); }
+.modal2 { position:fixed; inset:0; background:rgba(8,20,18,.55); display:flex; align-items:center; justify-content:center; z-index:70; padding:24px; }
+.confirm { background:#fff; border-radius:16px; padding:20px; width:100%; max-width:320px; }
+.confirm-t { font-size:17px; font-weight:700; color:#1d2b27; }
+.confirm-m { font-size:13.5px; color:#6f6a5c; margin:8px 0 14px; line-height:1.5; }
+.confirm-pw { width:100%; border:1px solid #e3ded0; border-radius:10px; padding:11px 12px; font-size:15px; font-family:inherit; outline:none; }
+.confirm-pw:focus { border-color:#0e302b; }
+.confirm-err { color:#c25b4e; font-size:12.5px; margin-top:8px; }
+.confirm-btns { display:flex; gap:8px; margin-top:14px; }
+.confirm-btns .act { flex:1; text-align:center; padding:12px; font-size:14px; }
 .nav-item { background:none; border:none; font-family:inherit; padding:11px 0 9px; display:flex; flex-direction:column; align-items:center; gap:3px; color:#a59f8d; cursor:pointer; font-size:11.5px; font-weight:600; }
 .nav-item.on { color:#0e302b; }
 .nav-item svg { width:22px; height:22px; }
@@ -240,6 +249,7 @@ html, body { background: #e9e4d7; }
   };
   var STORAGE_KEY = "shanghai-trip-v1";
   var RATE_KEY = "cny-krw-rate";
+  var DELETE_PW = "2724"; // 영수증 삭제 비밀번호
 
   function buildInitial() {
     var checkpoints = {};
@@ -284,7 +294,7 @@ html, body { background: #e9e4d7; }
   }
 
   var data, saveFlash = false, saveTimer = null;
-  var ui = { mode: "roster", activeDay: "wed", openCp: null, adding: false, rcptAdding: false, editingId: null, detailId: null, modalImgs: null };
+  var ui = { mode: "roster", activeDay: "wed", openCp: null, adding: false, rcptAdding: false, editingId: null, detailId: null, modalImgs: null, deleteId: null, delErr: false };
   var receipts = [], receiptsLoaded = false, tempImgs = [], scanning = false;
   var rate = parseFloat(localStorage.getItem(RATE_KEY)) || 190;
 
@@ -489,9 +499,20 @@ html, body { background: #e9e4d7; }
       + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2v20l3-2 3 2 3-2 3 2 3-2V2l-3 2-3-2-3 2-3-2-3 2z"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="14" y2="13"/></svg>영수증 내역</button></nav>';
     html += renderDetail();
     if (ui.modalImgs && ui.modalImgs.length) html += '<div class="modal" data-act="modal-close"><button class="modal-close" data-act="modal-close">×</button><div class="modal-scroll">' + ui.modalImgs.map(function (u) { return '<img src="' + u + '" alt="영수증" />'; }).join("") + '</div></div>';
+    if (ui.deleteId) {
+      html += '<div class="modal2"><div class="confirm"><div class="confirm-t">영수증 삭제</div>'
+        + '<div class="confirm-m">삭제하면 복구할 수 없습니다.<br/>삭제하려면 비밀번호를 입력하세요.</div>'
+        + '<input class="confirm-pw" id="delPw" type="password" inputmode="numeric" placeholder="비밀번호" />'
+        + (ui.delErr ? '<div class="confirm-err">비밀번호가 일치하지 않습니다.</div>' : '')
+        + '<div class="confirm-btns"><button class="act act-ghost" data-act="del-cancel">취소</button><button class="act act-del" data-act="del-confirm">삭제</button></div></div></div>';
+    }
 
     document.getElementById("root").innerHTML = html;
     var sd = document.getElementById("saveDot"); if (sd) sd.style.display = saveFlash ? "inline" : "none";
+    if (ui.deleteId) {
+      var pe = document.getElementById("delPw");
+      if (pe) { pe.focus(); pe.addEventListener("keydown", function (e) { if (e.key === "Enter") { if (pe.value === DELETE_PW) { var did = ui.deleteId; ui.deleteId = null; ui.delErr = false; ui.detailId = null; deleteReceipt(did); } else { ui.delErr = true; render(); } } }); }
+    }
 
     if (ui.mode === "roster" && ui.adding) {
       var inp = document.getElementById("addInput");
@@ -649,7 +670,9 @@ html, body { background: #e9e4d7; }
     else if (act === "edit") { var eid = btn.getAttribute("data-id"); var er = receipts.filter(function (x) { return x.id === eid; })[0]; if (er) { ui.editingId = eid; ui.detailId = null; ui.rcptAdding = false; tempImgs = getImgs(er).slice(); render(); } }
     else if (act === "rcpt-cancel") { tempImgs = []; ui.rcptAdding = false; ui.editingId = null; render(); }
     else if (act === "rcpt-submit") { submitReceipt(); }
-    else if (act === "rcpt-del") { ui.detailId = null; deleteReceipt(btn.getAttribute("data-id")); }
+    else if (act === "rcpt-del") { ui.deleteId = btn.getAttribute("data-id"); ui.delErr = false; render(); }
+    else if (act === "del-cancel") { ui.deleteId = null; ui.delErr = false; render(); }
+    else if (act === "del-confirm") { var pwEl = document.getElementById("delPw"); var pw = pwEl ? pwEl.value : ""; if (pw === DELETE_PW) { var did = ui.deleteId; ui.deleteId = null; ui.delErr = false; ui.detailId = null; deleteReceipt(did); } else { ui.delErr = true; render(); } }
     else if (act === "detail") { ui.detailId = btn.getAttribute("data-id"); render(); }
     else if (act === "detail-close") { ui.detailId = null; render(); }
     else if (act === "view") { var id = btn.getAttribute("data-img"); var r = receipts.filter(function (x) { return x.id === id; })[0]; if (r) { ui.modalImgs = getImgs(r); render(); } }
