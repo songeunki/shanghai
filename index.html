@@ -26,6 +26,17 @@ html, body { background: #e9e4d7; }
 .dot-save { font-size: 11px; color: #8fd0aa; }
 .hdr-title { font-family: 'Gowun Batang', serif; font-weight: 700; font-size: 27px; margin: 10px 0 12px; position: relative; letter-spacing: -.01em; }
 .hdr-meta { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #cfd9d2; position: relative; }
+.hdr-right { display:flex; align-items:center; gap:10px; }
+.logout-btn { background:rgba(255,255,255,.14); border:1px solid rgba(255,255,255,.22); color:#f4f1e9; font-family:inherit; font-size:11px; font-weight:600; padding:5px 11px; border-radius:8px; cursor:pointer; }
+.login { min-height:100vh; background:linear-gradient(150deg,#0e302b 0%,#134039 55%,#0b2622 100%); display:flex; align-items:center; justify-content:center; padding:24px; }
+.login-card { width:100%; max-width:360px; background:#fff; border-radius:18px; padding:30px 24px; text-align:center; box-shadow:0 18px 50px rgba(0,0,0,.25); }
+.login-kicker { font-size:10px; letter-spacing:.2em; color:#c9a24b; font-weight:700; }
+.login-title { font-family:'Gowun Batang',serif; font-size:24px; font-weight:700; color:#0e302b; margin:10px 0 8px; line-height:1.35; }
+.login-sub { font-size:12.5px; color:#8a8678; margin-bottom:20px; }
+.login-pw { width:100%; border:1px solid #e3ded0; border-radius:10px; padding:13px 14px; font-size:16px; font-family:inherit; outline:none; text-align:center; }
+.login-pw:focus { border-color:#0e302b; }
+.login-err { color:#c25b4e; font-size:12.5px; margin-top:10px; }
+.login-btn { width:100%; margin-top:14px; background:#0e302b; color:#fff; border:none; border-radius:10px; padding:14px; font-size:15px; font-weight:700; font-family:inherit; cursor:pointer; }
 .hdr-meta .sep { color: #c9a24b; opacity: .7; }
 
 .tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 14px 14px 6px; position: sticky; top: 0; z-index: 5; background: #f4f1e9; }
@@ -289,6 +300,10 @@ html, body { background: #e9e4d7; }
   var STORAGE_KEY = "shanghai-trip-v1";
   var RATE_KEY = "cny-krw-rate";
   var DELETE_PW = "2724"; // 영수증 삭제 비밀번호
+  var ADMIN_PW = "grandsun2026"; // 관리자 로그인 비밀번호 — 원하는 값으로 바꾸세요
+  var AUTH_KEY = "shanghai-auth";
+  var authed = false;
+  try { authed = localStorage.getItem(AUTH_KEY) === "1"; } catch (e) {}
 
   function buildInitial() {
     var checkpoints = {};
@@ -333,7 +348,7 @@ html, body { background: #e9e4d7; }
   }
 
   var data, saveFlash = false, saveTimer = null;
-  var ui = { mode: "roster", activeDay: "wed", openCp: null, adding: false, rcptAdding: false, editingId: null, detailId: null, modalImgs: null, deleteId: null, delErr: false };
+  var ui = { mode: "roster", activeDay: "wed", openCp: null, adding: false, rcptAdding: false, editingId: null, detailId: null, modalImgs: null, deleteId: null, delErr: false, loginErr: false };
   var receipts = [], receiptsLoaded = false, tempImgs = [], scanning = false;
   var rate = parseFloat(localStorage.getItem(RATE_KEY)) || 190;
 
@@ -521,11 +536,34 @@ html, body { background: #e9e4d7; }
   }
 
   /* ---- 렌더 ---- */
+  function renderLogin() {
+    return '<div class="login"><div class="login-card">'
+      + '<div class="login-kicker">CORPORATE TRIP · SHANGHAI</div>'
+      + '<div class="login-title">상해 전시회<br/>인원 · 경비 관리</div>'
+      + '<div class="login-sub">관리자 전용 · 비밀번호를 입력하세요</div>'
+      + '<input class="login-pw" id="loginPw" type="password" inputmode="numeric" placeholder="관리자 비밀번호" />'
+      + (ui.loginErr ? '<div class="login-err">비밀번호가 일치하지 않습니다.</div>' : '')
+      + '<button class="login-btn" data-act="login">로그인</button>'
+      + '</div></div>';
+  }
+  function tryLogin() {
+    var lp = document.getElementById("loginPw"); var v = lp ? lp.value : "";
+    if (v === ADMIN_PW) { authed = true; try { localStorage.setItem(AUTH_KEY, "1"); } catch (e) {} ui.loginErr = false; render(); }
+    else { ui.loginErr = true; render(); }
+  }
+
   function render() {
+    if (!authed) {
+      var rootEl = document.getElementById("root");
+      rootEl.innerHTML = renderLogin();
+      var lp = document.getElementById("loginPw");
+      if (lp) { lp.focus(); lp.addEventListener("keydown", function (e) { if (e.key === "Enter") tryLogin(); }); }
+      return;
+    }
     var html = '<div class="screen">';
     html += '<header class="hdr"><div class="hdr-grain"></div>'
       + '<div class="hdr-top"><span class="hdr-kicker">CORPORATE TRIP · SHANGHAI</span>'
-      + '<span class="dot-save" id="saveDot" style="display:none">● 저장됨</span></div>'
+      + '<span class="hdr-right"><span class="dot-save" id="saveDot" style="display:none">● 저장됨</span><button class="logout-btn" data-act="logout">로그아웃</button></span></div>'
       + '<h1 class="hdr-title">상해 전시회 ' + (ui.mode === "receipts" ? "지출 내역" : "인원 관리") + '</h1>'
       + '<div class="hdr-meta"><span>수 · 목 · 금 · 토</span><span class="sep">/</span><span>4일</span>'
       + '<span class="sep">/</span><span>9개 방 · ' + TOTAL + '명</span></div></header>';
@@ -824,6 +862,8 @@ html, body { background: #e9e4d7; }
     else if (act === "view") { var id = btn.getAttribute("data-img"); var r = receipts.filter(function (x) { return x.id === id; })[0]; if (r) { ui.modalImgs = getImgs(r); render(); } }
     else if (act === "modal-close") { ui.modalImgs = null; render(); }
     else if (act === "export-pdf") { exportPdf(); }
+    else if (act === "login") { tryLogin(); }
+    else if (act === "logout") { authed = false; try { localStorage.removeItem(AUTH_KEY); } catch (e) {} ui.loginErr = false; render(); }
   });
   document.getElementById("root").addEventListener("change", function (e) {
     if (e.target && e.target.id === "rateInput") {
